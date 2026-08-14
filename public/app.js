@@ -27,6 +27,16 @@ let fields = [];
 let hours = [];
 let source = null;
 
+// The court select, the slug input and the date input all trigger loadDay(),
+// so a user can easily fire a second request before the first one's response
+// comes back. Without a guard, a slower/older response can resolve after a
+// newer one and clobber the select, `hours` and the notice with stale data —
+// even a stale error could overwrite a fresh success. Each call gets its own
+// sequence number; after its await, a call whose number no longer matches
+// the latest one is abandoned and must not touch the UI in any way.
+let loadDaySequence = 0;
+let loadDayController = null;
+
 const currentSlug = () =>
   el.field.value === OTHER ? el.slug.value.trim() : el.field.value;
 
@@ -61,6 +71,13 @@ async function loadDay() {
   const field = currentSlug();
   if (!field || !el.date.value) return;
 
+  // Cancel any request still in flight from a previous call and claim a new
+  // sequence number for this one — see the comment on loadDaySequence above.
+  loadDayController?.abort();
+  const controller = new AbortController();
+  loadDayController = controller;
+  const sequence = ++loadDaySequence;
+
   el.hour.innerHTML = "";
   el.hour.disabled = true;
   el.plays.hidden = true;
@@ -69,7 +86,13 @@ async function loadDay() {
   try {
     const day = await fetchJSON(
       `/api/replays?field=${encodeURIComponent(field)}&date=${el.date.value}`,
+      { signal: controller.signal },
     );
+
+    // A newer call already started (and this one may well have been
+    // aborted): its response, not ours, gets to define the UI state.
+    if (sequence !== loadDaySequence) return;
+
     hours = day.hours;
 
     if (hours.length === 0) {
@@ -84,6 +107,11 @@ async function loadDay() {
     notice("");
     showPlays();
   } catch (error) {
+    // Same rule applies to failures: a stale request's error must not
+    // overwrite what a newer, successful request already rendered. And an
+    // abort we triggered ourselves is not a failure worth reporting.
+    if (sequence !== loadDaySequence) return;
+    if (error.name === "AbortError") return;
     notice(error.message);
   }
 }
