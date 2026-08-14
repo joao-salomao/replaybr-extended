@@ -16,7 +16,7 @@ export interface RenderProgress {
 }
 
 export interface Clip {
-  /** Posição cronológica, atribuída antes de qualquer download. */
+  /** Chronological position, assigned before any download. */
   index: number;
   timestamp: string;
   path: string;
@@ -29,13 +29,13 @@ export interface RenderFailure {
 }
 
 export interface RenderResult {
-  /** Em ordem cronológica. */
+  /** In chronological order. */
   clips: Clip[];
   merged: { path: string; duration: number } | null;
   failed: RenderFailure[];
 }
 
-/** Costura para os testes: permite exercitar o pipeline sem ffmpeg real. */
+/** Seam for tests: lets the pipeline run without a real ffmpeg. */
 export interface RenderDeps {
   downloadReplayPairs: typeof downloadReplayPairs;
   probeDimensions: typeof probeDimensions;
@@ -71,18 +71,18 @@ export interface RenderRequest {
   deps?: RenderDeps;
 }
 
-const mensagem = (error: unknown): string =>
+const message = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
 /**
- * Baixa e renderiza os lances, um vídeo por lance.
+ * Downloads and renders the plays, one video per play.
  *
- * Cada lance é renderizado assim que seus arquivos terminam de baixar, enquanto
- * os próximos ainda baixam — o primeiro clipe fica pronto em segundos, e o
- * bruto some logo depois, mantendo o pico de disco baixo.
+ * Each play is rendered as soon as its files finish downloading, while the
+ * next ones are still downloading — the first clip is ready in seconds, and
+ * its raw files are gone right after, keeping the disk peak low.
  *
- * A renderização é serializada por uma corrente de promessas: dois ffmpeg ao
- * mesmo tempo só disputariam a mesma CPU.
+ * Rendering is serialized through a promise chain: two ffmpeg processes at
+ * once would just fight over the same CPU.
  */
 export async function renderReplays({
   replays,
@@ -98,39 +98,39 @@ export async function renderReplays({
   onClip,
   deps = defaultRenderDeps,
 }: RenderRequest): Promise<RenderResult> {
-  // O índice cronológico é fixado aqui, antes de qualquer download, para que o
-  // nome do arquivo não dependa da ordem em que os downloads terminam.
-  const ordenados = [...replays].sort((a, b) =>
+  // The chronological index is fixed here, before any download, so the
+  // filename doesn't depend on the order downloads finish in.
+  const sorted = [...replays].sort((a, b) =>
     a.timestamp.localeCompare(b.timestamp),
   );
 
-  const total = ordenados.length;
-  // Basta a listagem para saber se o quadro é duplo: nada precisa ser baixado.
-  const columns = ordenados.some((replay) => replay.camera2_url) ? 2 : 1;
+  const total = sorted.length;
+  // The listing alone tells us if the frame is double: nothing needs downloading.
+  const columns = sorted.some((replay) => replay.camera2_url) ? 2 : 1;
 
   const clips: Clip[] = [];
   const failed: RenderFailure[] = [];
   let cell: Dimensions | null = null;
-  let renderizados = 0;
-  let corrente: Promise<void> = Promise.resolve();
+  let rendered = 0;
+  let chain: Promise<void> = Promise.resolve();
 
-  const renderizarPar = async (pair: ReplayPair): Promise<void> => {
-    const primeira = pair.cameras[0];
-    if (!primeira) return;
+  const renderPair = async (pair: ReplayPair): Promise<void> => {
+    const first = pair.cameras[0];
+    if (!first) return;
 
-    // Todos os clipes da hora precisam sair do mesmo tamanho, senão o concat
-    // sem recodificar deixa de valer. O primeiro arquivo define a medida.
-    const medida = (cell ??= await deps.probeDimensions(primeira));
+    // Every clip in the hour needs to come out the same size, or concat
+    // without re-encoding stops working. The first file sets the measure.
+    const measure = (cell ??= await deps.probeDimensions(first));
 
-    const numero = String(pair.index + 1).padStart(2, "0");
-    const relogio = pair.timestamp.slice(11).replaceAll(":", "-");
-    const path = `${outDir}/${numero}_${relogio}.mp4`;
+    const number = String(pair.index + 1).padStart(2, "0");
+    const clock = pair.timestamp.slice(11).replaceAll(":", "-");
+    const path = `${outDir}/${number}_${clock}.mp4`;
 
     const sources = swap ? [...pair.cameras].reverse() : pair.cameras;
     await deps.renderClip({
       sources,
       output: path,
-      cell: medida,
+      cell: measure,
       columns,
       fps,
       crf,
@@ -145,25 +145,25 @@ export async function renderReplays({
       cameras: pair.cameras.length >= 2 ? 2 : 1,
     };
     clips.push(clip);
-    renderizados++;
+    rendered++;
     onClip(clip);
-    onProgress({ phase: "render", done: renderizados, total });
+    onProgress({ phase: "render", done: rendered, total });
   };
 
-  await deps.downloadReplayPairs(ordenados, rawDir, {
+  await deps.downloadReplayPairs(sorted, rawDir, {
     concurrency,
-    onProgress: ({ done, total: arquivos }) =>
-      onProgress({ phase: "download", done, total: arquivos }),
+    onProgress: ({ done, total: files }) =>
+      onProgress({ phase: "download", done, total: files }),
     onPair: (pair) => {
-      corrente = corrente
-        .then(() => renderizarPar(pair))
+      chain = chain
+        .then(() => renderPair(pair))
         .catch((error: unknown) => {
-          failed.push({ timestamp: pair.timestamp, error: mensagem(error) });
+          failed.push({ timestamp: pair.timestamp, error: message(error) });
         });
     },
     onPairError: ({ timestamp, error }) => failed.push({ timestamp, error }),
   });
-  await corrente;
+  await chain;
 
   clips.sort((a, b) => a.index - b.index);
 

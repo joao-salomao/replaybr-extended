@@ -5,64 +5,64 @@ import { renderReplays, type Clip, type RenderDeps } from "./render.ts";
 
 const replay = (timestamp: string, cameras: 1 | 2): Replay => ({
   timestamp,
-  camera1_url: `https://exemplo/${timestamp}/camera1.mp4`,
+  camera1_url: `https://example/${timestamp}/camera1.mp4`,
   ...(cameras === 2
-    ? { camera2_url: `https://exemplo/${timestamp}/camera2.mp4` }
+    ? { camera2_url: `https://example/${timestamp}/camera2.mp4` }
     : {}),
 });
 
-interface Espiao {
+interface Spy {
   deps: RenderDeps;
-  renderizados: Array<{ sources: string[]; output: string; columns: number }>;
-  apagados: string[][];
-  concatenados: string[][];
+  rendered: Array<{ sources: string[]; output: string; columns: number }>;
+  removed: string[][];
+  concatenated: string[][];
 }
 
 /**
- * Deps falsos. `ordem` define em que sequência os pares são entregues,
- * por índice — é assim que simulamos downloads terminando fora de ordem.
+ * Fake deps. `order` defines the sequence in which pairs are delivered, by
+ * index — this is how we simulate downloads finishing out of order.
  */
-function espiao(ordem: number[], falhas: string[] = []): Espiao {
-  const renderizados: Espiao["renderizados"] = [];
-  const apagados: string[][] = [];
-  const concatenados: string[][] = [];
+function spy(order: number[], failures: string[] = []): Spy {
+  const rendered: Spy["rendered"] = [];
+  const removed: string[][] = [];
+  const concatenated: string[][] = [];
 
   const deps: RenderDeps = {
     downloadReplayPairs: async (replays, rawDir, options) => {
       const pairs: ReplayPair[] = [];
-      for (const index of ordem) {
-        const alvo = replays[index];
-        if (!alvo) continue;
+      for (const index of order) {
+        const target = replays[index];
+        if (!target) continue;
         const cameras = [`${rawDir}/cam1-${index}.mp4`];
-        if (alvo.camera2_url) cameras.push(`${rawDir}/cam2-${index}.mp4`);
-        const pair: ReplayPair = { index, timestamp: alvo.timestamp, cameras };
+        if (target.camera2_url) cameras.push(`${rawDir}/cam2-${index}.mp4`);
+        const pair: ReplayPair = { index, timestamp: target.timestamp, cameras };
         pairs.push(pair);
         options?.onPair?.(pair);
       }
-      for (const timestamp of falhas) {
-        options?.onPairError?.({ index: -1, timestamp, error: "rede caiu" });
+      for (const timestamp of failures) {
+        options?.onPairError?.({ index: -1, timestamp, error: "network down" });
       }
       return { pairs, failed: [] };
     },
     probeDimensions: async () => ({ width: 704, height: 560 }),
     renderClip: async ({ sources, output, columns }) => {
-      renderizados.push({ sources, output, columns });
+      rendered.push({ sources, output, columns });
       return output;
     },
     concatClips: async (clips, output) => {
-      concatenados.push(clips);
+      concatenated.push(clips);
       return output;
     },
     probeDuration: async () => 42,
     removePaths: async (paths) => {
-      apagados.push(paths);
+      removed.push(paths);
     },
   };
 
-  return { deps, renderizados, apagados, concatenados };
+  return { deps, rendered, removed, concatenated };
 }
 
-const pedido = (replays: Replay[], deps: RenderDeps, extra = {}) => ({
+const request = (replays: Replay[], deps: RenderDeps, extra = {}) => ({
   replays,
   rawDir: "/tmp/raw",
   outDir: "/tmp/out",
@@ -78,17 +78,17 @@ const pedido = (replays: Replay[], deps: RenderDeps, extra = {}) => ({
   ...extra,
 });
 
-const TRES = [
+const THREE = [
   replay("2026-08-13T20:34:25", 2),
   replay("2026-08-13T20:35:39", 2),
   replay("2026-08-13T20:48:28", 2),
 ];
 
 describe("renderReplays", () => {
-  test("devolve os clipes em ordem cronológica mesmo baixando fora de ordem", async () => {
-    const { deps } = espiao([2, 0, 1]);
+  test("returns the clips in chronological order even when downloaded out of order", async () => {
+    const { deps } = spy([2, 0, 1]);
 
-    const result = await renderReplays(pedido(TRES, deps));
+    const result = await renderReplays(request(THREE, deps));
 
     expect(result.clips.map((c) => c.timestamp)).toEqual([
       "2026-08-13T20:34:25",
@@ -97,59 +97,59 @@ describe("renderReplays", () => {
     ]);
   });
 
-  test("numera o arquivo pela posição cronológica, não pela ordem de conclusão", async () => {
-    const { deps, renderizados } = espiao([2, 0, 1]);
+  test("numbers the file by chronological position, not completion order", async () => {
+    const { deps, rendered } = spy([2, 0, 1]);
 
-    await renderReplays(pedido(TRES, deps));
+    await renderReplays(request(THREE, deps));
 
-    // O primeiro a ser renderizado é o índice 2, que é o terceiro do dia.
-    expect(renderizados[0]?.output).toBe("/tmp/out/03_20-48-28.mp4");
-    expect(renderizados[1]?.output).toBe("/tmp/out/01_20-34-25.mp4");
+    // The first one rendered is index 2, which is the third one of the day.
+    expect(rendered[0]?.output).toBe("/tmp/out/03_20-48-28.mp4");
+    expect(rendered[1]?.output).toBe("/tmp/out/01_20-34-25.mp4");
   });
 
-  test("apaga o bruto de cada lance logo após renderizá-lo", async () => {
-    const { deps, apagados } = espiao([0, 1, 2]);
+  test("removes each play's raw files right after rendering it", async () => {
+    const { deps, removed } = spy([0, 1, 2]);
 
-    await renderReplays(pedido(TRES, deps));
+    await renderReplays(request(THREE, deps));
 
-    expect(apagados).toHaveLength(3);
-    expect(apagados[0]).toEqual(["/tmp/raw/cam1-0.mp4", "/tmp/raw/cam2-0.mp4"]);
+    expect(removed).toHaveLength(3);
+    expect(removed[0]).toEqual(["/tmp/raw/cam1-0.mp4", "/tmp/raw/cam2-0.mp4"]);
   });
 
-  test("swap inverte a ordem das câmeras", async () => {
-    const { deps, renderizados } = espiao([0]);
+  test("swap reverses the camera order", async () => {
+    const { deps, rendered } = spy([0]);
 
-    await renderReplays(pedido([TRES[0]!], deps, { swap: true }));
+    await renderReplays(request([THREE[0]!], deps, { swap: true }));
 
-    expect(renderizados[0]?.sources).toEqual([
+    expect(rendered[0]?.sources).toEqual([
       "/tmp/raw/cam2-0.mp4",
       "/tmp/raw/cam1-0.mp4",
     ]);
   });
 
-  test("usa quadro duplo quando algum lance da hora tem segunda câmera", async () => {
-    const misto = [replay("2026-08-13T20:34:25", 1), replay("2026-08-13T20:35:39", 2)];
-    const { deps, renderizados } = espiao([0, 1]);
+  test("uses a double frame when any play in the hour has a second camera", async () => {
+    const mixed = [replay("2026-08-13T20:34:25", 1), replay("2026-08-13T20:35:39", 2)];
+    const { deps, rendered } = spy([0, 1]);
 
-    await renderReplays(pedido(misto, deps));
+    await renderReplays(request(mixed, deps));
 
-    expect(renderizados.map((r) => r.columns)).toEqual([2, 2]);
+    expect(rendered.map((r) => r.columns)).toEqual([2, 2]);
   });
 
-  test("usa quadro simples quando nenhum lance tem segunda câmera", async () => {
-    const { deps, renderizados } = espiao([0]);
+  test("uses a single frame when no play has a second camera", async () => {
+    const { deps, rendered } = spy([0]);
 
-    await renderReplays(pedido([replay("2026-08-13T20:34:25", 1)], deps));
+    await renderReplays(request([replay("2026-08-13T20:34:25", 1)], deps));
 
-    expect(renderizados[0]?.columns).toBe(1);
+    expect(rendered[0]?.columns).toBe(1);
   });
 
-  test("concat monta o vídeo único com os clipes em ordem", async () => {
-    const { deps, concatenados } = espiao([2, 0, 1]);
+  test("concat assembles the single video with the clips in order", async () => {
+    const { deps, concatenated } = spy([2, 0, 1]);
 
-    const result = await renderReplays(pedido(TRES, deps, { concat: true }));
+    const result = await renderReplays(request(THREE, deps, { concat: true }));
 
-    expect(concatenados[0]).toEqual([
+    expect(concatenated[0]).toEqual([
       "/tmp/out/01_20-34-25.mp4",
       "/tmp/out/02_20-35-39.mp4",
       "/tmp/out/03_20-48-28.mp4",
@@ -157,62 +157,62 @@ describe("renderReplays", () => {
     expect(result.merged).toEqual({ path: "/tmp/out/completo.mp4", duration: 42 });
   });
 
-  test("sem concat não produz vídeo único", async () => {
-    const { deps, concatenados } = espiao([0]);
+  test("without concat, no single video is produced", async () => {
+    const { deps, concatenated } = spy([0]);
 
-    const result = await renderReplays(pedido([TRES[0]!], deps));
+    const result = await renderReplays(request([THREE[0]!], deps));
 
-    expect(concatenados).toEqual([]);
+    expect(concatenated).toEqual([]);
     expect(result.merged).toBeNull();
   });
 
-  test("lance que falhou no download entra em failed sem parar o resto", async () => {
-    const { deps } = espiao([0, 1], ["2026-08-13T20:48:28"]);
+  test("a play that failed to download lands in failed without stopping the rest", async () => {
+    const { deps } = spy([0, 1], ["2026-08-13T20:48:28"]);
 
-    const result = await renderReplays(pedido(TRES, deps));
+    const result = await renderReplays(request(THREE, deps));
 
     expect(result.clips).toHaveLength(2);
     expect(result.failed).toEqual([
-      { timestamp: "2026-08-13T20:48:28", error: "rede caiu" },
+      { timestamp: "2026-08-13T20:48:28", error: "network down" },
     ]);
   });
 
-  test("lance que falhou na renderização entra em failed sem parar o resto", async () => {
-    const { deps } = espiao([0, 1, 2]);
+  test("a play that failed to render lands in failed without stopping the rest", async () => {
+    const { deps } = spy([0, 1, 2]);
     const original = deps.renderClip;
     deps.renderClip = async (options) => {
-      if (options.output.includes("02_")) throw new Error("ffmpeg quebrou");
+      if (options.output.includes("02_")) throw new Error("ffmpeg broke");
       return original(options);
     };
 
-    const result = await renderReplays(pedido(TRES, deps));
+    const result = await renderReplays(request(THREE, deps));
 
     expect(result.clips).toHaveLength(2);
-    expect(result.failed[0]?.error).toBe("ffmpeg quebrou");
+    expect(result.failed[0]?.error).toBe("ffmpeg broke");
   });
 
-  test("emite progresso das fases", async () => {
-    const { deps } = espiao([0, 1, 2]);
-    const fases: string[] = [];
+  test("emits progress for each phase", async () => {
+    const { deps } = spy([0, 1, 2]);
+    const phases: string[] = [];
 
     await renderReplays(
-      pedido(TRES, deps, {
+      request(THREE, deps, {
         concat: true,
-        onProgress: (p: { phase: string }) => fases.push(p.phase),
+        onProgress: (p: { phase: string }) => phases.push(p.phase),
       }),
     );
 
-    expect(fases).toContain("render");
-    expect(fases).toContain("concat");
+    expect(phases).toContain("render");
+    expect(phases).toContain("concat");
   });
 
-  test("chama onClip conforme cada clipe fica pronto", async () => {
-    const { deps } = espiao([2, 0, 1]);
-    const vistos: Clip[] = [];
+  test("calls onClip as each clip becomes ready", async () => {
+    const { deps } = spy([2, 0, 1]);
+    const seen: Clip[] = [];
 
-    await renderReplays(pedido(TRES, deps, { onClip: (c: Clip) => vistos.push(c) }));
+    await renderReplays(request(THREE, deps, { onClip: (c: Clip) => seen.push(c) }));
 
-    // onClip segue a ordem de conclusão, não a cronológica.
-    expect(vistos.map((c) => c.index)).toEqual([2, 0, 1]);
+    // onClip follows completion order, not chronological order.
+    expect(seen.map((c) => c.index)).toEqual([2, 0, 1]);
   });
 });
