@@ -7,7 +7,7 @@ services:
       PORT: 3000
       WORK_DIR: /app/work
     volumes:
-      # Os temporários ficam fora da camada de escrita do container.
+      # Temp files stay outside the container's writable layer.
       - work:/app/work
     restart: unless-stopped
 

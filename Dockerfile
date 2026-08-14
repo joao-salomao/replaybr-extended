@@ -1,6 +1,6 @@
 FROM oven/bun:1.3-slim
 
-# O host não precisa de ffmpeg: ele vive dentro da imagem.
+# The host doesn't need ffmpeg: it lives inside the image.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg \
  && rm -rf /var/lib/apt/lists/*
