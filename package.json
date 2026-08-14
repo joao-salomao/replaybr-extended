@@ -10,13 +10,14 @@
     "start": "bun run index.ts",
     "web": "bun run server.ts",
     "test": "bun test",
-    "typecheck": "tsc --noEmit",
-    "build": "bun build ./index.ts --compile --minify --bytecode --outfile dist/replaybr-extended"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "ffmpeg-static": "^5.2.0",
     "hono": "^4.13.2",
     "jszip": "^3.10.1"
   },
+  "trustedDependencies": ["ffmpeg-static"],
   "devDependencies": {
     "@types/bun": "^1.3.14",
     "typescript": "^7.0.2"
