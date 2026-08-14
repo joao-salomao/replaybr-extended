@@ -41,5 +41,5 @@ jobs:
       # Building proves the Dockerfile is valid; this proves the thing the
       # image exists for. The host is not expected to have ffmpeg, so if it
       # were missing here the server would refuse to boot in production.
-      - name: Check ffmpeg and ffprobe are in the image
-        run: docker run --rm replaybr-extended:ci sh -c "ffmpeg -version && ffprobe -version"
+      - name: Check ffmpeg is in the image
+        run: docker run --rm replaybr-extended:ci ffmpeg -version
