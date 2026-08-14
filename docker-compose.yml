@@ -1,0 +1,15 @@
+services:
+  web:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      WORK_DIR: /app/work
+    volumes:
+      # Os temporários ficam fora da camada de escrita do container.
+      - work:/app/work
+    restart: unless-stopped
+
+volumes:
+  work:
