@@ -3,14 +3,15 @@ import { basename } from "node:path";
 import JSZip from "jszip";
 
 /**
- * Empacota os clipes de um job num `.zip`.
+ * Packs a job's clips into a `.zip`.
  *
- * Tudo em stream: `createReadStream` na entrada e `generateNodeStream` na
- * saída. Com `generateAsync`, um zip de 200 MB custaria ~475 MB de RSS, e como
- * não há fila dois downloads simultâneos dobrariam isso — em stream o pico fica
- * em ~67 MB para o mesmo arquivo.
+ * Everything streamed: `createReadStream` on the way in, `generateNodeStream`
+ * on the way out. With `generateAsync`, a 200 MB zip would cost ~475 MB of
+ * RSS, and since there's no queue two simultaneous downloads would double
+ * that — streaming keeps the peak around ~67 MB for the same file.
  *
- * `STORE` porque mp4 já vem comprimido: deflate aqui gasta CPU sem reduzir nada.
+ * `STORE` because mp4 already comes compressed: deflate here burns CPU without
+ * shrinking anything.
  */
 export async function buildZip(
   paths: string[],
@@ -18,7 +19,7 @@ export async function buildZip(
 ): Promise<string> {
   const zip = new JSZip();
   for (const path of paths) {
-    // O nome dentro do zip é só o arquivo: o caminho no servidor não vaza.
+    // The name inside the zip is just the filename: the server-side path never leaks.
     zip.file(basename(path), createReadStream(path));
   }
 
@@ -30,8 +31,8 @@ export async function buildZip(
   });
 
   await new Promise<void>((resolve, reject) => {
-    stream.on("data", (pedaco: Uint8Array) => {
-      sink.write(pedaco);
+    stream.on("data", (chunk: Uint8Array) => {
+      sink.write(chunk);
     });
     stream.on("end", () => resolve());
     stream.on("error", reject);

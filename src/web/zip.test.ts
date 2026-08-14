@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import JSZip from "jszip";
 import { buildZip } from "./zip.ts";
 
 let dir: string;
@@ -14,66 +15,63 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-/** Roda o `unzip` do sistema e devolve saída e código de saída. */
-async function unzip(args: string[]): Promise<{ saida: string; code: number }> {
-  const proc = Bun.spawn(["unzip", ...args], { stdout: "pipe", stderr: "pipe" });
-  const [saida, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    proc.exited,
-  ]);
-  return { saida, code };
-}
-
-test("o unzip do sistema valida o CRC de todas as entradas", async () => {
-  const primeiro = join(dir, "01_20-34-25.mp4");
-  const segundo = join(dir, "02_20-35-39.mp4");
-  await Bun.write(primeiro, "conteúdo do primeiro");
-  // Bytes binários de verdade: texto não exercita o formato direito.
+test("JSZip validates the CRC of every entry on read", async () => {
+  const first = join(dir, "01_20-34-25.mp4");
+  const second = join(dir, "02_20-35-39.mp4");
+  await Bun.write(first, "conteúdo do primeiro");
+  // Real binary bytes: text doesn't exercise the format properly.
   await Bun.write(
-    segundo,
+    second,
     new Uint8Array(Array.from({ length: 3000 }, (_, i) => i % 256)),
   );
 
-  const saida = await buildZip([primeiro, segundo], join(dir, "todos.zip"));
-  const { code } = await unzip(["-t", saida]);
+  const output = await buildZip([first, second], join(dir, "todos.zip"));
+  const bytes = await Bun.file(output).arrayBuffer();
 
-  expect(code).toBe(0);
+  // `checkCRC32: true` makes loadAsync throw if any entry's CRC doesn't
+  // match its decompressed content — the closest JSZip equivalent of `unzip -t`.
+  await expect(JSZip.loadAsync(bytes, { checkCRC32: true })).resolves.toBeDefined();
 });
 
-test("lista as entradas pelo nome do arquivo, sem caminho", async () => {
-  const clipe = join(dir, "01_20-34-25.mp4");
-  await Bun.write(clipe, "vídeo");
+test("lists entries by filename, without the path", async () => {
+  const clip = join(dir, "01_20-34-25.mp4");
+  await Bun.write(clip, "vídeo");
 
-  const saida = await buildZip([clipe], join(dir, "todos.zip"));
-  const { saida: listagem } = await unzip(["-l", saida]);
+  const output = await buildZip([clip], join(dir, "todos.zip"));
+  const bytes = await Bun.file(output).arrayBuffer();
+  const archive = await JSZip.loadAsync(bytes);
 
-  expect(listagem).toContain("01_20-34-25.mp4");
-  // O nome da entrada não pode carregar o caminho absoluto do servidor.
-  expect(listagem).not.toContain(clipe);
+  expect(Object.keys(archive.files)).toEqual(["01_20-34-25.mp4"]);
+  // The entry name can't carry the server's absolute path.
+  expect(Object.keys(archive.files).join()).not.toContain(clip);
 });
 
-test("o conteúdo extraído é idêntico ao original, byte a byte", async () => {
-  const clipe = join(dir, "01_20-34-25.mp4");
+test("the extracted content is identical to the original, byte for byte", async () => {
+  const clip = join(dir, "01_20-34-25.mp4");
   const original = new Uint8Array(
     Array.from({ length: 5000 }, (_, i) => (i * 7) % 256),
   );
-  await Bun.write(clipe, original);
+  await Bun.write(clip, original);
 
-  const saida = await buildZip([clipe], join(dir, "todos.zip"));
-  const destino = join(dir, "extraido");
-  await unzip(["-o", "-q", saida, "-d", destino]);
+  const output = await buildZip([clip], join(dir, "todos.zip"));
+  const bytes = await Bun.file(output).arrayBuffer();
+  const archive = await JSZip.loadAsync(bytes);
 
-  const extraido = new Uint8Array(
-    await Bun.file(join(destino, "01_20-34-25.mp4")).arrayBuffer(),
-  );
-  expect(extraido).toEqual(original);
+  const entry = archive.file("01_20-34-25.mp4");
+  expect(entry).not.toBeNull();
+  const extracted = await entry!.async("uint8array");
+  expect(extracted).toEqual(original);
 });
 
-test("lista vazia produz um zip estruturalmente válido", async () => {
-  const saida = await buildZip([], join(dir, "vazio.zip"));
-  const bytes = new Uint8Array(await Bun.file(saida).arrayBuffer());
+test("an empty list produces a structurally valid zip", async () => {
+  const output = await buildZip([], join(dir, "vazio.zip"));
+  const bytes = new Uint8Array(await Bun.file(output).arrayBuffer());
 
-  // Só o End Of Central Directory: 22 bytes começando por "PK\x05\x06".
+  // Just the End Of Central Directory: 22 bytes starting with "PK\x05\x06".
   expect(bytes).toHaveLength(22);
   expect([...bytes.slice(0, 4)]).toEqual([0x50, 0x4b, 0x05, 0x06]);
+
+  // Still readable back as a valid (empty) archive.
+  const archive = await JSZip.loadAsync(bytes);
+  expect(Object.keys(archive.files)).toEqual([]);
 });
