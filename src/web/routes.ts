@@ -138,16 +138,23 @@ export function createApp({ fetchReplays, jobs, publicDir }: RouteDeps): Hono {
       });
 
       try {
-        while (job.status === "running") {
+        // `write()` do Hono engole erro de escrita: um cliente que já foi
+        // embora nunca faria essa promessa rejeitar. Sem checar `aborted`
+        // aqui, o laço ficaria sondando a cada 200ms até o job terminar
+        // sozinho, escrevendo no vazio.
+        while (job.status === "running" && !stream.aborted) {
           const proximo = pendentes.shift();
           if (proximo) await stream.writeSSE({ data: proximo });
           else await stream.sleep(200);
         }
-        // Drena o que sobrou, garantindo que o estado final chegue.
-        for (const restante of pendentes) {
-          await stream.writeSSE({ data: restante });
+        if (!stream.aborted) {
+          // Drena o que sobrou, garantindo que o estado final chegue —
+          // inclusive para quem conectou num job que já tinha terminado.
+          for (const restante of pendentes) {
+            await stream.writeSSE({ data: restante });
+          }
+          await stream.writeSSE({ data: JSON.stringify(jobs.serialize(job)) });
         }
-        await stream.writeSSE({ data: JSON.stringify(jobs.serialize(job)) });
       } finally {
         cancelar();
       }
@@ -195,14 +202,17 @@ export function createApp({ fetchReplays, jobs, publicDir }: RouteDeps): Hono {
 
     const range = c.req.header("range");
     const match = range?.match(/^bytes=(\d*)-(\d*)$/);
-    if (!match) {
+    if (!match || (match[1] === "" && match[2] === "")) {
       return new Response(file, { headers });
     }
 
     // Sem Range o `<video>` não consegue buscar posição no meio do vídeo.
     const size = file.size;
-    const start = match[1] ? Number(match[1]) : 0;
-    const end = match[2] ? Number(match[2]) : size - 1;
+    // "bytes=-N" é sufixo — os últimos N bytes — e não "do byte 0 até N"
+    // (RFC 7233 §2.1). Só é sufixo quando o início vem vazio.
+    const sufixo = match[1] === "";
+    const start = sufixo ? Math.max(0, size - Number(match[2])) : Number(match[1]);
+    const end = sufixo ? size - 1 : match[2] ? Number(match[2]) : size - 1;
     if (start >= size || end >= size || start > end) {
       return new Response(null, {
         status: 416,

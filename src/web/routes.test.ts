@@ -66,6 +66,35 @@ const criarJob = async (corpo: Record<string, unknown> = {}) =>
     }),
   });
 
+/**
+ * Lê um `Response` de SSE até o stream fechar e devolve o corpo (já
+ * `JSON.parse`ado) de cada mensagem `data:`, na ordem em que chegaram.
+ */
+const lerEventosSSE = async (res: Response): Promise<unknown[]> => {
+  const reader = res.body?.getReader();
+  if (!reader) return [];
+
+  const decoder = new TextDecoder();
+  const eventos: unknown[] = [];
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let fim: number;
+    while ((fim = buffer.indexOf("\n\n")) !== -1) {
+      const bloco = buffer.slice(0, fim);
+      buffer = buffer.slice(fim + 2);
+      const linha = bloco.split("\n").find((l) => l.startsWith("data: "));
+      if (linha) eventos.push(JSON.parse(linha.slice("data: ".length)));
+    }
+  }
+
+  return eventos;
+};
+
 describe("GET /api/fields", () => {
   test("lista as quadras com rótulo e swap padrão", async () => {
     const res = await app.request("/api/fields");
@@ -159,6 +188,91 @@ describe("GET /api/jobs/:id", () => {
   });
 });
 
+describe("GET /api/jobs/:id/events", () => {
+  test("job já concluído: primeiro evento já traz o estado final", async () => {
+    const { jobId } = (await (await criarJob()).json()) as { jobId: string };
+    await store.get(jobId)?.done;
+
+    const res = await app.request(`/api/jobs/${jobId}/events`);
+    const eventos = await lerEventosSSE(res);
+
+    expect(eventos.length).toBeGreaterThan(0);
+    const primeiro = eventos[0] as {
+      status: string;
+      clips: Array<{ url: string }>;
+    };
+    expect(primeiro.status).toBe("done");
+    expect(primeiro.clips[0]?.url).toBe(`/files/${jobId}/01_20-34-25.mp4`);
+  });
+
+  test("conectado no meio do job, recebe o estado final quando ele termina", async () => {
+    let liberar: () => void = () => {};
+    const portao = new Promise<void>((resolve) => {
+      liberar = resolve;
+    });
+
+    // Igual ao `render` padrão, mas só termina quando o teste liberar o
+    // portão — simula um job ainda "running" no momento em que o SSE conecta.
+    const renderControlado = async (
+      request: RenderRequest,
+    ): Promise<RenderResult> => {
+      const path = `${request.outDir}/01_20-34-25.mp4`;
+      await Bun.write(path, "conteudo-do-video");
+      const clip = {
+        index: 0,
+        timestamp: "2026-08-13T20:34:25",
+        path,
+        cameras: 2 as const,
+      };
+      request.onClip(clip);
+      await portao;
+      return { clips: [clip], merged: null, failed: [] };
+    };
+
+    const storeControlado = new JobStore({
+      root,
+      render: renderControlado,
+      now: () => 0,
+    });
+    const appControlado = createApp({
+      fetchReplays: async () => REPLAYS,
+      jobs: storeControlado,
+      publicDir: "public",
+    });
+
+    const jobRes = await appControlado.request("/api/jobs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        field: "four-play-3",
+        date: "2026-08-13",
+        hour: "20",
+        replays: ["2026-08-13T20:34:25"],
+        swap: true,
+        concat: false,
+      }),
+    });
+    const { jobId } = (await jobRes.json()) as { jobId: string };
+    const job = storeControlado.get(jobId);
+    expect(job?.status).toBe("running");
+
+    const sseRes = await appControlado.request(`/api/jobs/${jobId}/events`);
+
+    // Solta o render só depois de já estar conectado ao stream: é o cenário
+    // que prova que nenhuma atualização se perde na virada running → done.
+    liberar();
+    const eventos = await lerEventosSSE(sseRes);
+
+    const ultimo = eventos.at(-1) as {
+      status: string;
+      clips: Array<{ url: string }>;
+    };
+    expect(ultimo.status).toBe("done");
+    expect(ultimo.clips).toHaveLength(1);
+    expect(ultimo.clips[0]?.url).toBe(`/files/${jobId}/01_20-34-25.mp4`);
+  });
+});
+
 describe("GET /files/:id/:name", () => {
   test("serve o arquivo inline por padrão", async () => {
     const { jobId } = (await (await criarJob()).json()) as { jobId: string };
@@ -191,6 +305,20 @@ describe("GET /files/:id/:name", () => {
 
     expect(res.status).toBe(206);
     expect(res.headers.get("content-range")).toBe("bytes 0-4/17");
+  });
+
+  test("range de sufixo (bytes=-5) devolve os últimos bytes, não os 5 primeiros", async () => {
+    const { jobId } = (await (await criarJob()).json()) as { jobId: string };
+    await store.get(jobId)?.done;
+
+    const res = await app.request(`/files/${jobId}/01_20-34-25.mp4`, {
+      headers: { range: "bytes=-5" },
+    });
+
+    expect(res.status).toBe(206);
+    expect(res.headers.get("content-range")).toBe("bytes 12-16/17");
+    // "conteudo-do-video" tem 17 bytes; os últimos 5 são "video".
+    expect(await res.text()).toBe("video");
   });
 
   test("recusa nome fora da lista de clipes do job", async () => {
