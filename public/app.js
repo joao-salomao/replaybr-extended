@@ -138,7 +138,7 @@ function atualizarBotao() {
   el.gerar.textContent =
     escolhidos.length === 0
       ? "Selecione ao menos um lance"
-      : `Gerar · ${escolhidos.length} lance(s) · ${arquivos} arquivos para baixar`;
+      : `Gerar · ${escolhidos.length} lance(s) · ${arquivos} arquivo(s) para baixar`;
 }
 
 async function gerar() {
@@ -177,10 +177,38 @@ function acompanhar(jobId) {
   fonte?.close();
   fonte = new EventSource(`/api/jobs/${jobId}/events`);
   fonte.onmessage = (evento) => desenhar(jobId, JSON.parse(evento.data));
-  fonte.onerror = () => {
-    fonte.close();
-    el.progresso.textContent = "Conexão perdida. Recarregue a página.";
-  };
+  fonte.onerror = () => void verificarJobAindaExiste(jobId);
+}
+
+// EventSource já reconecta sozinho depois de um erro — fechar a conexão aqui
+// jogaria fora esse reconnect embutido por causa de um blip passageiro, e o
+// job pode continuar rodando normalmente do outro lado. Só interrompemos de
+// verdade quando o job realmente sumiu (expirou, ou o servidor reiniciou e
+// perdeu o work dir).
+let verificandoJob = false;
+async function verificarJobAindaExiste(jobId) {
+  if (verificandoJob) return;
+  verificandoJob = true;
+
+  try {
+    const res = await fetch(`/api/jobs/${jobId}`);
+    if (res.status !== 404) return;
+
+    const corpo = await res.json().catch(() => ({}));
+    fonte?.close();
+
+    el.progresso.textContent = "";
+    const texto = document.createElement("span");
+    texto.textContent = corpo.error ?? "Esse link expirou.";
+    const link = document.createElement("a");
+    link.href = "/";
+    link.textContent = "Voltar ao início";
+    el.progresso.append(texto, document.createElement("br"), link);
+  } catch {
+    // Falha ao checar: deixa o EventSource seguir tentando reconectar sozinho.
+  } finally {
+    verificandoJob = false;
+  }
 }
 
 const FASES = { download: "Baixando", render: "Renderizando", concat: "Juntando" };
@@ -235,6 +263,9 @@ function desenhar(jobId, estado) {
 
   if (estado.status !== "running") {
     fonte?.close();
+    // O job terminou (com sucesso ou não): o usuário precisa poder gerar
+    // outro sem precisar mexer numa caixa de seleção antes.
+    atualizarBotao();
     el.acoes.innerHTML = "";
 
     if (estado.merged) {

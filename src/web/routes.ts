@@ -19,6 +19,9 @@ export interface RouteDeps {
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** Intervalo máximo sem escrever nada no SSE antes de mandar um keepalive. */
+const SSE_KEEPALIVE_MS = 15_000;
+
 interface CorpoDoJob {
   field: unknown;
   date: unknown;
@@ -143,10 +146,24 @@ export function createApp({ fetchReplays, jobs, publicDir }: RouteDeps): Hono {
         // embora nunca faria essa promessa rejeitar. Sem checar `aborted`
         // aqui, o laço ficaria sondando a cada 200ms até o job terminar
         // sozinho, escrevendo no vazio.
+        let ultimaEscrita = Date.now();
         while (job.status === "running" && !stream.aborted) {
           const proximo = pendentes.shift();
-          if (proximo) await stream.writeSSE({ data: proximo });
-          else await stream.sleep(200);
+          if (proximo) {
+            await stream.writeSSE({ data: proximo });
+            ultimaEscrita = Date.now();
+          } else {
+            await stream.sleep(200);
+            // Um job demorado pode passar bem mais que os 200ms entre
+            // eventos reais: sem um keepalive, um trecho longo de silêncio
+            // dispararia o `idleTimeout` do Bun e derrubaria a conexão.
+            // Linha de comentário SSE (começa com `:`): o EventSource do
+            // cliente a ignora, nunca chega a `onmessage`.
+            if (Date.now() - ultimaEscrita >= SSE_KEEPALIVE_MS) {
+              await stream.write(": keepalive\n\n");
+              ultimaEscrita = Date.now();
+            }
+          }
         }
         if (!stream.aborted) {
           // Drena o que sobrou, garantindo que o estado final chegue —
