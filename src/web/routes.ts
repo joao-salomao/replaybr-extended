@@ -5,6 +5,7 @@ import { streamSSE } from "hono/streaming";
 import {
   groupReplaysByHour,
   normalizeHour,
+  ReplayBrIndisponivelError,
   type Replay,
 } from "../api.ts";
 import { FIELDS, resolveField } from "../fields.ts";
@@ -286,6 +287,27 @@ export function createApp({ fetchReplays, jobs, publicDir }: RouteDeps): Hono {
 
   app.get("/", pagina);
   app.get("/j/:id", pagina);
+
+  // Toda rota devolve `{ error }` em português nos casos previstos, mas um
+  // throw que escapa (ex.: fetchReplays falhando) cairia no handler padrão do
+  // Hono, que devolve texto puro "Internal Server Error" — o front mostra
+  // isso cru como "Erro 500". A causa mais provável de longe é a API do
+  // ReplayBR fora do ar, então essa é diferenciada explicitamente.
+  app.onError((err, c) => {
+    console.error("✗ Erro não tratado numa rota:", err);
+
+    if (err instanceof ReplayBrIndisponivelError) {
+      return c.json(
+        {
+          error:
+            "Não foi possível falar com a API do ReplayBR agora. Tente de novo em instantes.",
+        },
+        502,
+      );
+    }
+
+    return c.json({ error: "Erro interno do servidor. Tente de novo." }, 500);
+  });
 
   return app;
 }

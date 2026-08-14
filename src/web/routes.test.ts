@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Replay } from "../api.ts";
+import { ReplayBrIndisponivelError, type Replay } from "../api.ts";
 import type { RenderRequest, RenderResult } from "../render.ts";
 import { JobStore } from "./jobs.ts";
 import { createApp } from "./routes.ts";
@@ -442,5 +442,44 @@ describe("GET /api/jobs/:id/zip", () => {
       stderr: "pipe",
     });
     expect(await proc.exited).toBe(0);
+  });
+});
+
+describe("app.onError", () => {
+  test("API do ReplayBR fora do ar devolve mensagem em português, não texto puro", async () => {
+    const appIndisponivel = createApp({
+      fetchReplays: async () => {
+        throw new ReplayBrIndisponivelError("timeout falando com a API");
+      },
+      jobs: store,
+      publicDir: "public",
+    });
+
+    const res = await appIndisponivel.request(
+      "/api/replays?field=four-play-3&date=2026-08-13",
+    );
+
+    expect(res.status).toBe(502);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    const corpo = (await res.json()) as { error: string };
+    expect(corpo.error).toContain("ReplayBR");
+  });
+
+  test("erro inesperado ainda vira JSON em português, não o 500 padrão do Hono", async () => {
+    const appQuebrado = createApp({
+      fetchReplays: async () => {
+        throw new Error("bug qualquer");
+      },
+      jobs: store,
+      publicDir: "public",
+    });
+
+    const res = await appQuebrado.request(
+      "/api/replays?field=four-play-3&date=2026-08-13",
+    );
+
+    expect(res.status).toBe(500);
+    const corpo = (await res.json()) as { error: string };
+    expect(corpo.error).not.toContain("Internal Server Error");
   });
 });

@@ -20,6 +20,14 @@ export interface HourGroup {
   replays: Replay[];
 }
 
+/**
+ * A API do ReplayBR não respondeu: fora do ar, DNS falhou, timeout, ou
+ * respondeu com um status de erro. Uma classe própria deixa quem trata o erro
+ * (a rota HTTP) diferenciar essa causa — de longe a mais provável — de um bug
+ * qualquer, sem precisar adivinhar a partir da mensagem.
+ */
+export class ReplayBrIndisponivelError extends Error {}
+
 /** Busca todos os replays de um campo em uma data (YYYY-MM-DD). */
 export async function fetchReplaysForDate(
   fieldName: string,
@@ -29,9 +37,18 @@ export async function fetchReplaysForDate(
     fieldName,
   )}&date=${encodeURIComponent(date)}`;
 
-  const res = await fetch(url, { signal: AbortSignal.timeout(API_TIMEOUT_MS) });
+  let res: Response;
+  try {
+    res = await fetch(url, { signal: AbortSignal.timeout(API_TIMEOUT_MS) });
+  } catch (error) {
+    throw new ReplayBrIndisponivelError(
+      `Falha ao falar com a API do ReplayBR: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
   if (!res.ok) {
-    throw new Error(`API respondeu ${res.status} ${res.statusText} para ${url}`);
+    throw new ReplayBrIndisponivelError(
+      `API respondeu ${res.status} ${res.statusText} para ${url}`,
+    );
   }
 
   const body = (await res.json()) as { replays?: Replay[] };
