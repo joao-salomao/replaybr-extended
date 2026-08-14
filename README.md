@@ -9,7 +9,7 @@ Quadras com uma câmera só também funcionam — veja [Câmera única](#câmera
 ## Requisitos
 
 - `bun`
-- `ffmpeg` e `ffprobe` no PATH (`brew install ffmpeg`)
+- `ffmpeg` no PATH (`brew install ffmpeg`)
 
 ```bash
 bun install
@@ -68,6 +68,8 @@ O horário é a **hora cheia** exibida no site, e aceita `20`, `20:00`, `2030` o
 2. **`src/download.ts`** — baixa `camera1.mp4` e `camera2.mp4` de cada replay (~7 MB cada, 30s, 704x560, sem áudio), com paralelismo limitado. Arquivos já baixados são reaproveitados.
 
 3. **`src/ffmpeg.ts`** — para cada replay, normaliza as câmeras para o mesmo tamanho e faz `hstack` (1408x560), gerando um arquivo por lance. Com `--concat`, junta os clipes com o concat demuxer sem recodificar — o que só funciona porque todos foram codificados com parâmetros idênticos.
+
+4. **`src/mp4.ts`** — lê largura/altura e duração dos vídeos direto da árvore de caixas do MP4 (`moov/mvhd`, `moov/trak/mdia/hdlr` e `.../stsd`), sem depender do `ffprobe`.
 
 ### Câmera única
 
@@ -136,7 +138,7 @@ O binário roda sem Bun instalado e de qualquer diretório (os caminhos de saíd
 ./dist/replaybr-extended 2026-07-29 20
 ```
 
-Por incluir o runtime, o binário é grande (~58 MB no macOS arm64, ~100 MB no alvo Linux). E **`ffmpeg` e `ffprobe` continuam sendo dependências externas** — não são embutidos.
+Por incluir o runtime, o binário é grande (~58 MB no macOS arm64, ~100 MB no alvo Linux). E **`ffmpeg` continua sendo uma dependência externa** — não é embutido.
 
 Para gerar para outra plataforma, acrescente `--target`:
 
@@ -161,6 +163,7 @@ src/api.ts          cliente da API + agrupamento por hora
 src/fields.ts       quadras suportadas e rótulos
 src/download.ts     download paralelo, com retry e entrega por conclusão
 src/ffmpeg.ts       hstack das duas câmeras + concat sem recodificar
+src/mp4.ts          leitor de dimensões/duração via árvore de caixas MP4
 src/render.ts       pipeline download → render → concat
 src/web/            jobs, rotas e zip
 public/             interface
