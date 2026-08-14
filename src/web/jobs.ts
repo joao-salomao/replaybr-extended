@@ -182,10 +182,16 @@ export class JobStore {
       if (job.finishedAt === null) continue;
       if (now - job.finishedAt <= TTL_MS) continue;
 
-      await rm(job.dir, { recursive: true, force: true });
-      this.jobs.delete(id);
-      this.listeners.delete(id);
-      removidos.push(id);
+      try {
+        await rm(job.dir, { recursive: true, force: true });
+        this.jobs.delete(id);
+        this.listeners.delete(id);
+        removidos.push(id);
+      } catch {
+        // Falha na remoção de um job não deve interromper a varredura dos demais.
+        // O job permanece no mapa para ser retentado na próxima passada.
+        continue;
+      }
     }
 
     return removidos;

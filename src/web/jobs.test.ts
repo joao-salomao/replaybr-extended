@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, mkdir, readdir } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, readdir, chmod } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Replay } from "../api.ts";
@@ -195,5 +195,38 @@ describe("JobStore.sweep", () => {
 
     expect(await store.sweep(TTL_MS * 10)).toEqual([]);
     expect(store.get(job.id)).toBeDefined();
+  });
+
+  test("continua a varredura mesmo se um job não conseguir ser removido", async () => {
+    const store = new JobStore({ root, render: sucesso, newId, now: () => 0 });
+    const job1 = store.create(ENTRADA);
+    const job2 = store.create({ ...ENTRADA, hour: "21" });
+    await job1.done;
+    await job2.done;
+
+    // Criar os diretórios para simular jobs completos
+    await mkdir(job1.dir, { recursive: true });
+    await mkdir(job2.dir, { recursive: true });
+
+    // Tornar o diretório do primeiro job sem permissões de escrita para forçar falha na remoção
+    // Usar uma permissão que não permite deletar (chmod 000)
+    await chmod(job1.dir, 0o000);
+
+    try {
+      // Varrer com tempo além do TTL
+      const removidos = await store.sweep(TTL_MS + 1);
+
+      // O segundo job deve ter sido removido mesmo que o primeiro falhe
+      expect(removidos).toContain(job2.id);
+      expect(removidos).not.toContain(job1.id);
+
+      // O primeiro job deve continuar no mapa (não foi removido)
+      expect(store.get(job1.id)).toBeDefined();
+      // O segundo job foi removido com sucesso
+      expect(store.get(job2.id)).toBeUndefined();
+    } finally {
+      // Limpar: restaurar permissões para que o afterEach consiga deletar
+      await chmod(job1.dir, 0o755);
+    }
   });
 });

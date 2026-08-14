@@ -23,6 +23,8 @@ setInterval(() => {
     if (removidos.length > 0) {
       console.log(`⌫ ${removidos.length} job(s) expirado(s) removido(s)`);
     }
+  }).catch((erro) => {
+    console.error(`✗ Falha ao varrer jobs expirados: ${erro instanceof Error ? erro.message : String(erro)}`);
   });
 }, SWEEP_INTERVAL_MS);
 
