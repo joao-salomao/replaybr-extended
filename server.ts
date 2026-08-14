@@ -18,7 +18,15 @@ await assertFfmpegAvailable();
 // com EBUSY — só o conteúdo pode ser apagado.
 await mkdir(WORK_DIR, { recursive: true });
 for (const entrada of await readdir(WORK_DIR)) {
-  await rm(`${WORK_DIR}/${entrada}`, { recursive: true, force: true });
+  try {
+    await rm(`${WORK_DIR}/${entrada}`, { recursive: true, force: true });
+  } catch (erro) {
+    // Uma entrada que não pode ser removida não deve impedir o boot: o
+    // servidor sobe do mesmo jeito, com esse resto ocupando espaço.
+    console.warn(
+      `⚠ Não foi possível remover "${entrada}" de ${WORK_DIR}: ${erro instanceof Error ? erro.message : String(erro)}`,
+    );
+  }
 }
 
 const jobs = new JobStore({ root: WORK_DIR });
