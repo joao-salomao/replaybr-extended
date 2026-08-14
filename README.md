@@ -57,7 +57,7 @@ bun run index.ts 2026-07-29 20:30 --concat
 | `--preset <p>` | `veryfast` | Preset x264 |
 | `--fps <n>` | `30` | FPS de saída |
 
-O horário aceita `20:30`, `2030` ou `20h30`.
+O horário é a **hora cheia** exibida no site, e aceita `20`, `20:00`, `2030` ou `20h30` — todos resolvem para a hora `20`.
 
 ## Como funciona
 
