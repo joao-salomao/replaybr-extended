@@ -38,8 +38,30 @@ jobs:
       # Docker is preinstalled on the runner, so a plain build needs no action.
       - run: docker build -t replaybr-extended:ci .
 
-      # Building proves the Dockerfile is valid; this proves the thing the
-      # image exists for. The host is not expected to have ffmpeg, so if it
-      # were missing here the server would refuse to boot in production.
-      - name: Check ffmpeg is in the image
-        run: docker run --rm replaybr-extended:ci ffmpeg -version
+      # Building only proves the Dockerfile parses. Booting proves the image
+      # actually works — and it subsumes a separate ffmpeg check, because
+      # server.ts verifies ffmpeg at startup and refuses to boot without it.
+      - name: Boot the image and check it serves
+        run: |
+          docker run -d --name check -p 3000:3000 replaybr-extended:ci
+
+          # Poll for readiness instead of sleeping a fixed amount: a fixed
+          # sleep is either flaky or wasteful, and this fails loudly with the
+          # container's own logs if the server never comes up.
+          for attempt in $(seq 30); do
+            # -s without -S: a poll that fails before the server is up is
+            # expected, and its error would just be noise in the log.
+            if curl -fs localhost:3000/api/fields >/dev/null \
+               && curl -fs localhost:3000/ >/dev/null; then
+              echo "API and page answered after ${attempt}s"
+              docker logs check
+              docker rm -f check
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "::error::the server did not answer within 30s"
+          docker logs check
+          docker rm -f check
+          exit 1
