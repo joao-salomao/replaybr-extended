@@ -1,3 +1,5 @@
+import ffmpegStatic from "ffmpeg-static";
+import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import type { Dimensions } from "./mp4.ts";
@@ -15,6 +17,32 @@ export interface RenderClipOptions {
   preset: string;
 }
 
+/**
+ * Picks which ffmpeg to run, in order: an explicit `FFMPEG_PATH` (how the
+ * Docker image points at its own binary), the one `ffmpeg-static` downloaded
+ * at install time, and finally whatever is on the PATH — the escape hatch for
+ * platforms the package has no build for.
+ */
+export function resolveFfmpegPath(
+  bundled: string | null,
+  env: Record<string, string | undefined>,
+  exists: (path: string) => boolean,
+): string {
+  // Deliberately not existence-checked: a FFMPEG_PATH that points nowhere is
+  // a typo the user needs to see, not something to paper over with the PATH.
+  const override = env.FFMPEG_PATH?.trim();
+  if (override) return override;
+
+  // `ffmpeg-static` returns its path whether or not the install script ran,
+  // and Bun skips install scripts for packages outside `trustedDependencies`.
+  if (bundled && exists(bundled)) return bundled;
+
+  return "ffmpeg";
+}
+
+/** Resolved once: the answer can't change while the process is running. */
+const FFMPEG = resolveFfmpegPath(ffmpegStatic, process.env, existsSync);
+
 async function run(bin: string, args: string[]): Promise<string> {
   const proc = Bun.spawn([bin, ...args], { stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, code] = await Promise.all([
@@ -31,10 +59,13 @@ async function run(bin: string, args: string[]): Promise<string> {
 
 export async function assertFfmpegAvailable(): Promise<void> {
   try {
-    await run("ffmpeg", ["-version"]);
+    await run(FFMPEG, ["-version"]);
   } catch {
     throw new Error(
-      "`ffmpeg` não encontrado no PATH. Instale com: brew install ffmpeg",
+      FFMPEG === "ffmpeg"
+        ? "`ffmpeg` não encontrado. Rode `bun install` para baixar o binário, " +
+          "ou instale um com `brew install ffmpeg`."
+        : `ffmpeg não pôde ser executado: ${FFMPEG}`,
     );
   }
 }
@@ -77,7 +108,7 @@ export async function renderClip({
   }
 
   await mkdir(dirname(output), { recursive: true });
-  await run("ffmpeg", [
+  await run(FFMPEG, [
     "-y", "-loglevel", "error",
     ...sources.flatMap((source) => ["-i", source]),
     "-filter_complex", steps.join(";"),
@@ -109,7 +140,7 @@ export async function concatClips(
   await writeFile(listFile, `${body}\n`);
   await mkdir(dirname(output), { recursive: true });
 
-  await run("ffmpeg", [
+  await run(FFMPEG, [
     "-y", "-loglevel", "error",
     "-f", "concat", "-safe", "0",
     "-i", listFile,
