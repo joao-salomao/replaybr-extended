@@ -1,34 +1,34 @@
 const API_BASE = "https://replays.replaybr.com.br";
 
-/** Teto de espera pela listagem de replays — resposta pequena, sem motivo para demorar. */
+/** Ceiling for the replay listing request — small response, no reason to be slow. */
 const API_TIMEOUT_MS = 15 * 1000;
 
-/** Um lance gravado. Nem todo campo (nem todo lance) tem a segunda câmera. */
+/** A recorded play. Not every field (nor every play) has a second camera. */
 export interface Replay {
-  /** ISO local sem timezone, ex: "2026-07-29T20:02:49" */
+  /** Local ISO without timezone, e.g. "2026-07-29T20:02:49" */
   timestamp: string;
   camera1_url: string;
-  /** Ausente quando o lance foi gravado por uma câmera só. */
+  /** Absent when the play was recorded by a single camera. */
   camera2_url?: string;
 }
 
 export interface HourGroup {
-  /** Hora com dois dígitos, ex: "20". */
+  /** Two-digit hour, e.g. "20". */
   hour: string;
-  /** Rótulo exibido, ex: "20:00". */
+  /** Displayed label, e.g. "20:00". */
   label: string;
   replays: Replay[];
 }
 
 /**
- * A API do ReplayBR não respondeu: fora do ar, DNS falhou, timeout, ou
- * respondeu com um status de erro. Uma classe própria deixa quem trata o erro
- * (a rota HTTP) diferenciar essa causa — de longe a mais provável — de um bug
- * qualquer, sem precisar adivinhar a partir da mensagem.
+ * The ReplayBR API didn't respond: down, DNS failed, timeout, or it
+ * responded with an error status. A dedicated class lets whoever handles the
+ * error (the HTTP route) tell this cause — by far the most likely one —
+ * apart from an arbitrary bug, without having to guess from the message.
  */
-export class ReplayBrIndisponivelError extends Error {}
+export class ReplayBrUnavailableError extends Error {}
 
-/** Busca todos os replays de um campo em uma data (YYYY-MM-DD). */
+/** Fetches every replay for a field on a given date (YYYY-MM-DD). */
 export async function fetchReplaysForDate(
   fieldName: string,
   date: string,
@@ -41,12 +41,12 @@ export async function fetchReplaysForDate(
   try {
     res = await fetch(url, { signal: AbortSignal.timeout(API_TIMEOUT_MS) });
   } catch (error) {
-    throw new ReplayBrIndisponivelError(
+    throw new ReplayBrUnavailableError(
       `Falha ao falar com a API do ReplayBR: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
   if (!res.ok) {
-    throw new ReplayBrIndisponivelError(
+    throw new ReplayBrUnavailableError(
       `API respondeu ${res.status} ${res.statusText} para ${url}`,
     );
   }
@@ -56,8 +56,9 @@ export async function fetchReplaysForDate(
 }
 
 /**
- * Agrupa replays pela hora do timestamp, exatamente como o site oficial faz —
- * é o mesmo segmento que aparece na URL do vídeo (`.../2026-08-13/21/...`).
+ * Groups replays by the hour of their timestamp, exactly like the official
+ * site does — it's the same segment that shows up in the video URL
+ * (`.../2026-08-13/21/...`).
  */
 export function groupReplaysByHour(replays: Replay[]): HourGroup[] {
   const sorted = [...replays].sort((a, b) =>
@@ -66,8 +67,8 @@ export function groupReplaysByHour(replays: Replay[]): HourGroup[] {
 
   const byHour = new Map<string, Replay[]>();
   for (const replay of sorted) {
-    // Timestamps vêm como ISO local, sem timezone. Fatiar a string evita
-    // qualquer conversão de fuso.
+    // Timestamps come as local ISO, without timezone. Slicing the string
+    // avoids any timezone conversion.
     const hour = replay.timestamp.slice(11, 13);
     const list = byHour.get(hour);
     if (list) list.push(replay);
@@ -79,7 +80,7 @@ export function groupReplaysByHour(replays: Replay[]): HourGroup[] {
     .map(([hour, list]) => ({ hour, label: `${hour}:00`, replays: list }));
 }
 
-/** Aceita "20", "20:30", "2030" ou "20h30" e devolve a hora ("20"). */
+/** Accepts "20", "20:30", "2030", or "20h30" and returns the hour ("20"). */
 export function normalizeHour(input: string): string | null {
   const match = input.trim().match(/^(\d{1,2})(?:[:h.]?(\d{2}))?$/);
   if (!match?.[1]) return null;

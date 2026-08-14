@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ReplayBrIndisponivelError, type Replay } from "../api.ts";
+import { ReplayBrUnavailableError, type Replay } from "../api.ts";
 import type { RenderRequest, RenderResult } from "../render.ts";
 import { JobStore } from "./jobs.ts";
 import { createApp } from "./routes.ts";
@@ -449,7 +449,7 @@ describe("app.onError", () => {
   test("API do ReplayBR fora do ar devolve mensagem em português, não texto puro", async () => {
     const appIndisponivel = createApp({
       fetchReplays: async () => {
-        throw new ReplayBrIndisponivelError("timeout falando com a API");
+        throw new ReplayBrUnavailableError("timeout falando com a API");
       },
       jobs: store,
       publicDir: "public",

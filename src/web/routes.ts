@@ -5,7 +5,7 @@ import { streamSSE } from "hono/streaming";
 import {
   groupReplaysByHour,
   normalizeHour,
-  ReplayBrIndisponivelError,
+  ReplayBrUnavailableError,
   type Replay,
 } from "../api.ts";
 import { FIELDS, resolveField } from "../fields.ts";
@@ -296,7 +296,7 @@ export function createApp({ fetchReplays, jobs, publicDir }: RouteDeps): Hono {
   app.onError((err, c) => {
     console.error("✗ Erro não tratado numa rota:", err);
 
-    if (err instanceof ReplayBrIndisponivelError) {
+    if (err instanceof ReplayBrUnavailableError) {
       return c.json(
         {
           error:

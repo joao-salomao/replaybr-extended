@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { groupReplaysByHour, normalizeHour, type Replay } from "./api.ts";
 
 /**
- * Lances reais de `four-play-3` em 2026-08-13, conferidos no site oficial em
- * 2026-08-14: a hora 20 mostra 6 lances e a hora 21 mostra 2.
+ * Real plays from `four-play-3` on 2026-08-13, checked against the official
+ * site on 2026-08-14: hour 20 shows 6 plays and hour 21 shows 2.
  */
 const TIMESTAMPS = [
   "2026-08-13T20:34:25",
@@ -18,14 +18,14 @@ const TIMESTAMPS = [
 
 const replay = (timestamp: string): Replay => ({
   timestamp,
-  camera1_url: `https://exemplo/${timestamp}/camera1.mp4`,
-  camera2_url: `https://exemplo/${timestamp}/camera2.mp4`,
+  camera1_url: `https://example/${timestamp}/camera1.mp4`,
+  camera2_url: `https://example/${timestamp}/camera2.mp4`,
 });
 
 const FIXTURE = TIMESTAMPS.map(replay);
 
 describe("groupReplaysByHour", () => {
-  test("agrupa pela hora do timestamp, como o site oficial", () => {
+  test("groups by the timestamp's hour, like the official site", () => {
     const groups = groupReplaysByHour(FIXTURE);
 
     expect(groups.map((g) => g.hour)).toEqual(["20", "21"]);
@@ -33,9 +33,9 @@ describe("groupReplaysByHour", () => {
     expect(groups[1]?.replays).toHaveLength(2);
   });
 
-  test("21:11:56 fica na hora 21, não na anterior", () => {
-    // Regressão: a lógica antiga de slots de 30min colocava esse lance no
-    // balde "20:30", divergindo do site.
+  test("21:11:56 lands in hour 21, not the previous one", () => {
+    // Regression: the old 30-minute-slot logic put this play in the "20:30"
+    // bucket, diverging from the site.
     const groups = groupReplaysByHour(FIXTURE);
     const hour21 = groups.find((g) => g.hour === "21");
 
@@ -45,18 +45,18 @@ describe("groupReplaysByHour", () => {
     ]);
   });
 
-  test("rotula a hora no formato exibido", () => {
+  test("labels the hour in the displayed format", () => {
     expect(groupReplaysByHour(FIXTURE)[0]?.label).toBe("20:00");
   });
 
-  test("ordena por timestamp mesmo com entrada fora de ordem", () => {
+  test("sorts by timestamp even with out-of-order input", () => {
     const groups = groupReplaysByHour([...FIXTURE].reverse());
 
     expect(groups.map((g) => g.hour)).toEqual(["20", "21"]);
     expect(groups[0]?.replays[0]?.timestamp).toBe("2026-08-13T20:34:25");
   });
 
-  test("lista vazia devolve nenhum grupo", () => {
+  test("empty list returns no groups", () => {
     expect(groupReplaysByHour([])).toEqual([]);
   });
 });
@@ -71,15 +71,15 @@ describe("normalizeHour", () => {
     ["20.30", "20"],
     ["9", "09"],
     ["00:15", "00"],
-    // Três dígitos são lidos como H + MM: "203" é 2:03.
+    // Three digits are read as H + MM: "203" is 2:03.
     ["203", "02"],
     [" 20 ", "20"],
-  ])("normaliza %p para %p", (input, expected) => {
+  ])("normalizes %p to %p", (input, expected) => {
     expect(normalizeHour(input)).toBe(expected);
   });
 
   test.each([["24"], ["20:60"], ["abc"], [""], ["-1"], ["20:1"]])(
-    "rejeita %p",
+    "rejects %p",
     (input) => {
       expect(normalizeHour(input)).toBeNull();
     },

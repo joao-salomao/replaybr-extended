@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { FIELDS, resolveField } from "./fields.ts";
 
 describe("FIELDS", () => {
-  test("expõe as duas quadras suportadas, com os rótulos oficiais", () => {
+  test("exposes the two supported fields, with their official labels", () => {
     expect(FIELDS.map((f) => [f.slug, f.label])).toEqual([
       ["placar-society", "Placar Society"],
       ["four-play-3", "Four Play - Quadra 3"],
@@ -11,16 +11,16 @@ describe("FIELDS", () => {
 });
 
 describe("resolveField", () => {
-  test("Four Play já vem com as câmeras invertidas", () => {
-    // A numeração da API não corresponde à posição física nessa quadra.
+  test("Four Play already comes with the cameras swapped", () => {
+    // This field's API numbering doesn't match the physical camera position.
     expect(resolveField("four-play-3")?.defaultSwap).toBe(true);
   });
 
-  test("Placar Society não inverte", () => {
+  test("Placar Society does not swap", () => {
     expect(resolveField("placar-society")?.defaultSwap).toBe(false);
   });
 
-  test("slug desconhecido mas válido vira quadra avulsa", () => {
+  test("unknown but valid slug becomes a standalone field", () => {
     expect(resolveField("global-society")).toEqual({
       slug: "global-society",
       label: "global-society",
@@ -36,7 +36,7 @@ describe("resolveField", () => {
     [""],
     ["-four-play"],
     ["four--play"],
-  ])("rejeita o slug inválido %p", (slug) => {
+  ])("rejects invalid slug %p", (slug) => {
     expect(resolveField(slug)).toBeNull();
   });
 });
