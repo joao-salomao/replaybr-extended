@@ -1,13 +1,8 @@
 import { rm } from "node:fs/promises";
 import type { Replay } from "./api.ts";
 import { downloadReplayPairs, type ReplayPair } from "./download.ts";
-import {
-  concatClips,
-  probeDimensions,
-  probeDuration,
-  renderClip,
-  type Dimensions,
-} from "./ffmpeg.ts";
+import { concatClips, renderClip } from "./ffmpeg.ts";
+import { probeDimensions, probeDuration, type Dimensions } from "./mp4.ts";
 
 export interface RenderProgress {
   phase: "download" | "render" | "concat";

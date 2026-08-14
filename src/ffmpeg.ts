@@ -1,10 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-
-export interface Dimensions {
-  width: number;
-  height: number;
-}
+import type { Dimensions } from "./mp4.ts";
 
 export interface RenderClipOptions {
   /** One or two cameras of the same play. */
@@ -34,32 +30,13 @@ async function run(bin: string, args: string[]): Promise<string> {
 }
 
 export async function assertFfmpegAvailable(): Promise<void> {
-  for (const bin of ["ffmpeg", "ffprobe"]) {
-    try {
-      await run(bin, ["-version"]);
-    } catch {
-      throw new Error(
-        `\`${bin}\` não encontrado no PATH. Instale com: brew install ffmpeg`,
-      );
-    }
+  try {
+    await run("ffmpeg", ["-version"]);
+  } catch {
+    throw new Error(
+      "`ffmpeg` não encontrado no PATH. Instale com: brew install ffmpeg",
+    );
   }
-}
-
-/** Reads width and height from the video, used to normalize every clip. */
-export async function probeDimensions(file: string): Promise<Dimensions> {
-  const out = await run("ffprobe", [
-    "-v", "error",
-    "-select_streams", "v:0",
-    "-show_entries", "stream=width,height",
-    "-of", "csv=p=0:s=x",
-    file,
-  ]);
-
-  const [width, height] = out.split("x").map(Number);
-  if (!width || !height) {
-    throw new Error(`Não foi possível ler as dimensões de ${file}`);
-  }
-  return { width, height };
 }
 
 /**
@@ -140,14 +117,4 @@ export async function concatClips(
     output,
   ]);
   return output;
-}
-
-export async function probeDuration(file: string): Promise<number> {
-  const out = await run("ffprobe", [
-    "-v", "error",
-    "-show_entries", "format=duration",
-    "-of", "csv=p=0",
-    file,
-  ]);
-  return Number(out);
 }
