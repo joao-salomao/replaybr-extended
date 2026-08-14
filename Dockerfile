@@ -1,9 +1,14 @@
-FROM oven/bun:1.3-slim
+# Statically linked ffmpeg, copied in rather than installed.
+#
+# `apt-get install ffmpeg` pulls in codecs, X11 and graphics libraries this app
+# never touches: 411 MB of the 607 MB image. These two binaries are 199 MB and
+# depend on nothing, which is also why they work on Alpine's musl.
+FROM mwader/static-ffmpeg:7.1 AS ffmpeg
+
+FROM oven/bun:1.3-alpine
 
 # The host doesn't need ffmpeg: it lives inside the image.
-RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg \
- && rm -rf /var/lib/apt/lists/*
+COPY --from=ffmpeg /ffmpeg /ffprobe /usr/local/bin/
 
 WORKDIR /app
 
