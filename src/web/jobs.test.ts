@@ -92,7 +92,7 @@ describe("JobStore.create", () => {
   test("a rendering error leaves the job in error", async () => {
     const store = new JobStore({
       root,
-      render: async () => { throw new Error("ffmpeg sumiu"); },
+      render: async () => { throw new Error("ffmpeg disappeared"); },
       newId,
       now: () => 0,
     });
@@ -101,7 +101,7 @@ describe("JobStore.create", () => {
 
     const state = store.serialize(job);
     expect(state.status).toBe("error");
-    expect(state.error).toBe("ffmpeg sumiu");
+    expect(state.error).toBe("ffmpeg disappeared");
   });
 
   test("no clip generated is an error, not an empty success", async () => {

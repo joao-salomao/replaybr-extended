@@ -393,7 +393,7 @@ describe("GET /api/jobs/:id/zip", () => {
     });
     const { jobId } = (await jobRes.json()) as { jobId: string };
     const job = controlledStore.get(jobId);
-    if (!job) throw new Error("job não criado");
+    if (!job) throw new Error("job not created");
 
     // Wait for the clip to show up: proves the zip request arrives while the
     // job is "mid-flight" — already with partial content — and not before any clip exists.
@@ -465,7 +465,7 @@ describe("app.onError", () => {
   test("an unexpected error still becomes Portuguese JSON, not Hono's default 500", async () => {
     const brokenApp = createApp({
       fetchReplays: async () => {
-        throw new Error("bug qualquer");
+        throw new Error("random bug");
       },
       jobs: store,
       publicDir: "public",
