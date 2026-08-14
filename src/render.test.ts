@@ -215,4 +215,54 @@ describe("renderReplays", () => {
     // onClip follows completion order, not chronological order.
     expect(seen.map((c) => c.index)).toEqual([2, 0, 1]);
   });
+
+  test("caps concurrent encodes across two simultaneous jobs to 1", async () => {
+    let inFlight = 0;
+    let peak = 0;
+
+    const makeDeps = (order: number[]) => {
+      const { deps } = spy(order);
+      const original = deps.renderClip;
+      deps.renderClip = async (options) => {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        // A few ms is enough for the second job's encode to overlap with
+        // the first's if the cross-job cap isn't actually enforced.
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        inFlight--;
+        return original(options);
+      };
+      return deps;
+    };
+
+    const jobA = renderReplays(request(THREE, makeDeps([0, 1, 2])));
+    const jobB = renderReplays(request(THREE, makeDeps([0, 1, 2])));
+
+    const [resultA, resultB] = await Promise.all([jobA, jobB]);
+
+    expect(peak).toBeLessThanOrEqual(1);
+    expect(resultA.clips).toHaveLength(3);
+    expect(resultB.clips).toHaveLength(3);
+  });
+
+  test("a renderClip that throws still releases its permit for a later job", async () => {
+    const { deps: failingDeps } = spy([0]);
+    failingDeps.renderClip = async () => {
+      throw new Error("ffmpeg broke");
+    };
+
+    const failedResult = await renderReplays(request([THREE[0]!], failingDeps));
+
+    expect(failedResult.clips).toHaveLength(0);
+    expect(failedResult.failed[0]?.error).toBe("ffmpeg broke");
+
+    // If the failure above had leaked its permit, this call would hang
+    // forever waiting for a permit that never comes back — that's the leak
+    // this test exists to catch.
+    const { deps: okDeps, rendered } = spy([0]);
+    const okResult = await renderReplays(request([THREE[0]!], okDeps));
+
+    expect(okResult.clips).toHaveLength(1);
+    expect(rendered).toHaveLength(1);
+  });
 });

@@ -3,6 +3,20 @@ import type { Replay } from "./api.ts";
 import { downloadReplayPairs, type ReplayPair } from "./download.ts";
 import { concatClips, renderClip } from "./ffmpeg.ts";
 import { probeDimensions, probeDuration, type Dimensions } from "./mp4.ts";
+import { Semaphore } from "./semaphore.ts";
+
+/**
+ * Caps concurrent ffmpeg encodes across every job on the server, not just
+ * within one. `libx264` is already multithreaded, so a single encode
+ * saturates a small box — 1 is the conservative choice the project owner
+ * asked for, given a 2-vCPU VPS and jobs that must never be rejected.
+ */
+const ENCODE_CONCURRENCY = 1;
+
+// Module scope: one instance shared by every job. An instance created per
+// call (e.g. inside `renderReplays`) would give each job its own permit
+// pool, defeating the entire cross-job cap.
+const encodeSemaphore = new Semaphore(ENCODE_CONCURRENCY);
 
 export interface RenderProgress {
   phase: "download" | "render" | "concat";
@@ -76,8 +90,11 @@ const message = (error: unknown): string =>
  * next ones are still downloading — the first clip is ready in seconds, and
  * its raw files are gone right after, keeping the disk peak low.
  *
- * Rendering is serialized through a promise chain: two ffmpeg processes at
- * once would just fight over the same CPU.
+ * Rendering is serialized through a promise chain, so a single job never
+ * runs two ffmpeg at once and never probes dimensions twice concurrently.
+ * On top of that, `encodeSemaphore` caps concurrent encodes across every
+ * job on the server to `ENCODE_CONCURRENCY` — otherwise N parallel jobs
+ * would still mean N parallel ffmpeg processes fighting over the same CPU.
  */
 export async function renderReplays({
   replays,
@@ -122,15 +139,28 @@ export async function renderReplays({
     const path = `${outDir}/${number}_${clock}.mp4`;
 
     const sources = swap ? [...pair.cameras].reverse() : pair.cameras;
-    await deps.renderClip({
-      sources,
-      output: path,
-      cell: measure,
-      columns,
-      fps,
-      crf,
-      preset,
-    });
+
+    // Only the encode itself queues on the cross-job cap. Downloads are
+    // I/O-bound and stay fully parallel — gating them here too would slow
+    // every job down for no CPU benefit.
+    const release = await encodeSemaphore.acquire();
+    try {
+      await deps.renderClip({
+        sources,
+        output: path,
+        cell: measure,
+        columns,
+        fps,
+        crf,
+        preset,
+      });
+    } finally {
+      // Must run even when renderClip throws: an escaped failure that skips
+      // this would leak the permit forever, and after enough failures the
+      // server would silently stop rendering — no error, nothing in the
+      // log, just no more clips ever.
+      release();
+    }
     await deps.removePaths(pair.cameras);
 
     const clip: Clip = {
