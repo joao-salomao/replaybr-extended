@@ -1,5 +1,11 @@
-import { describe, expect, test } from "bun:test";
-import { groupReplaysByHour, normalizeHour, type Replay } from "./api.ts";
+import { afterEach, describe, expect, test } from "bun:test";
+import {
+  fetchReplaysForDate,
+  groupReplaysByHour,
+  normalizeHour,
+  ReplayBrUnavailableError,
+  type Replay,
+} from "./api.ts";
 
 /**
  * Real plays from `four-play-3` on 2026-08-13, checked against the official
@@ -84,4 +90,94 @@ describe("normalizeHour", () => {
       expect(normalizeHour(input)).toBeNull();
     },
   );
+});
+
+const originalFetch = globalThis.fetch;
+let calls: { url: string; init?: RequestInit }[];
+
+/** Replaces fetch with a stub driven by `handler`, so no test ever reaches the network. */
+function stubFetch(
+  handler: (url: string, init?: RequestInit) => Response | Promise<Response>,
+): void {
+  calls = [];
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    calls.push({ url, init });
+    return handler(url, init);
+  }) as typeof fetch;
+}
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
+
+describe("fetchReplaysForDate", () => {
+  test("returns the replays array from a successful response", async () => {
+    const replays: Replay[] = [
+      { timestamp: "2026-08-13T20:34:25", camera1_url: "https://example/c1.mp4" },
+    ];
+    stubFetch(() => Response.json({ replays }));
+
+    const result = await fetchReplaysForDate("four-play-3", "2026-08-13");
+
+    expect(result).toEqual(replays);
+  });
+
+  test("a body with no replays key returns an empty array", async () => {
+    stubFetch(() => Response.json({}));
+
+    expect(await fetchReplaysForDate("four-play-3", "2026-08-13")).toEqual([]);
+  });
+
+  test("a body where replays is not an array returns an empty array", async () => {
+    stubFetch(() => Response.json({ replays: "not-an-array" }));
+
+    expect(await fetchReplaysForDate("four-play-3", "2026-08-13")).toEqual([]);
+  });
+
+  test("a non-2xx response throws ReplayBrUnavailableError", async () => {
+    stubFetch(() => new Response("nope", { status: 503, statusText: "Service Unavailable" }));
+
+    await expect(fetchReplaysForDate("four-play-3", "2026-08-13")).rejects.toThrow(
+      ReplayBrUnavailableError,
+    );
+  });
+
+  test("a fetch rejection throws ReplayBrUnavailableError preserving the underlying message", async () => {
+    stubFetch(() => {
+      throw new Error("getaddrinfo ENOTFOUND replays.replaybr.com.br");
+    });
+
+    await expect(fetchReplaysForDate("four-play-3", "2026-08-13")).rejects.toThrow(
+      /getaddrinfo ENOTFOUND replays\.replaybr\.com\.br/,
+    );
+  });
+
+  test("builds the URL from API_BASE with fieldName and date, for an ordinary input", async () => {
+    stubFetch(() => Response.json({ replays: [] }));
+
+    await fetchReplaysForDate("four-play-3", "2026-08-13");
+
+    expect(calls[0]?.url).toBe(
+      "https://replays.replaybr.com.br/available-hours?fieldName=four-play-3&date=2026-08-13",
+    );
+  });
+
+  test("percent-encodes fieldName and date when they need it", async () => {
+    stubFetch(() => Response.json({ replays: [] }));
+
+    await fetchReplaysForDate("campo & sul", "2026/08/13");
+
+    expect(calls[0]?.url).toBe(
+      "https://replays.replaybr.com.br/available-hours?fieldName=campo%20%26%20sul&date=2026%2F08%2F13",
+    );
+  });
+
+  test("passes an abort signal for the timeout", async () => {
+    stubFetch(() => Response.json({ replays: [] }));
+
+    await fetchReplaysForDate("four-play-3", "2026-08-13");
+
+    expect(calls[0]?.init?.signal).toBeInstanceOf(AbortSignal);
+  });
 });
