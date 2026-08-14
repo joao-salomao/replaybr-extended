@@ -111,12 +111,17 @@ export class JobStore {
   constructor({ root, render, newId, now }: JobStoreOptions) {
     this.root = root;
     this.render = render ?? renderReplays;
-    this.newId = newId ?? (() => crypto.randomUUID().slice(0, 8));
+    // 12 hex chars (48 bits): o risco aqui não é adivinhação, é colisão — um
+    // id repetido faria `create` substituir silenciosamente um job vivo, e os
+    // dois passariam a dividir `work/<id>/`, vazando os arquivos de um nas
+    // URLs `/files` do outro. Ainda assim `create` reamostra se colidir.
+    this.newId = newId ?? (() => crypto.randomUUID().replaceAll("-", "").slice(0, 12));
     this.now = now ?? Date.now;
   }
 
   create(input: JobInput): Job {
-    const id = this.newId();
+    let id = this.newId();
+    while (this.jobs.has(id)) id = this.newId();
     const dir = `${this.root}/${id}`;
 
     const job: Job = {
@@ -230,7 +235,17 @@ export class JobStore {
     if (!set) return;
 
     const state = this.serialize(job);
-    for (const listener of set) listener(state);
+    for (const listener of set) {
+      try {
+        listener(state);
+      } catch (error) {
+        // `run()` chama `notify` dentro do seu `finally`, fora de qualquer
+        // catch: um listener mal-comportado que lança derrubaria o processo
+        // inteiro (unhandled rejection) por causa de um efeito colateral de
+        // notificação, não do job em si.
+        console.error(`✗ listener do job ${job.id} falhou:`, error);
+      }
+    }
   }
 
   private async run(job: Job): Promise<void> {

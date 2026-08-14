@@ -150,6 +150,36 @@ describe("JobStore.create", () => {
   });
 });
 
+describe("JobStore.create — ids", () => {
+  test("o id gerado por padrão tem 12+ caracteres hexadecimais", () => {
+    const store = new JobStore({ root, render: sucesso, now: () => 0 });
+    const job = store.create(ENTRADA);
+
+    expect(job.id).toMatch(/^[0-9a-f]{12,}$/);
+  });
+
+  test("reamostra o id quando ele colide com um job já existente", () => {
+    const ids = ["repetido", "repetido", "unico"];
+    let chamadas = 0;
+    const store = new JobStore({
+      root,
+      render: sucesso,
+      newId: () => ids[chamadas++] ?? "sobra",
+      now: () => 0,
+    });
+
+    const job1 = store.create(ENTRADA);
+    expect(job1.id).toBe("repetido");
+
+    // A segunda chamada de newId() repete "repetido": create() precisa
+    // perceber a colisão e pedir outro id em vez de substituir job1 no mapa.
+    const job2 = store.create(ENTRADA);
+    expect(job2.id).toBe("unico");
+    expect(store.get("repetido")).toBe(job1);
+    expect(store.get("unico")).toBe(job2);
+  });
+});
+
 describe("JobStore.subscribe", () => {
   test("notifica a cada progresso e ao terminar", async () => {
     const store = new JobStore({ root, render: sucesso, newId, now: () => 0 });
@@ -171,6 +201,23 @@ describe("JobStore.subscribe", () => {
     await job.done;
 
     expect(estados).toEqual([]);
+  });
+
+  test("um listener que lança não derruba os demais nem o job", async () => {
+    const store = new JobStore({ root, render: sucesso, newId, now: () => 0 });
+    const job = store.create(ENTRADA);
+    const estados: JobState[] = [];
+
+    store.subscribe(job.id, () => {
+      throw new Error("listener quebrado");
+    });
+    store.subscribe(job.id, (estado) => estados.push(estado));
+
+    // Se `notify` deixasse a exceção escapar, `job.done` rejeitaria
+    // (unhandled rejection) e este `await` lançaria.
+    await job.done;
+
+    expect(estados.at(-1)?.status).toBe("done");
   });
 });
 
