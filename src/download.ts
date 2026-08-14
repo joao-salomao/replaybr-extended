@@ -31,9 +31,26 @@ export interface ReplayPair {
   cameras: string[];
 }
 
+export interface DownloadFailure {
+  index: number;
+  timestamp: string;
+  error: string;
+}
+
+export interface DownloadOutcome {
+  pairs: ReplayPair[];
+  failed: DownloadFailure[];
+}
+
 export interface DownloadOptions {
   concurrency?: number;
+  /** Tentativas extras por arquivo. Padrão 2, ou seja, 3 no total. */
+  retries?: number;
   onProgress?: (progress: DownloadProgress) => void;
+  /** Chamado quando todos os arquivos de um lance terminam, na ordem de conclusão. */
+  onPair?: (pair: ReplayPair) => void;
+  /** Chamado uma vez por lance que perdeu algum arquivo. */
+  onPairError?: (failure: DownloadFailure) => void;
 }
 
 /** Roda `worker` sobre `items` com no máximo `limit` em paralelo, preservando a ordem. */
@@ -87,14 +104,47 @@ async function downloadFile(
   return { skipped: false, bytes };
 }
 
+async function withRetry<T>(
+  operation: () => Promise<T>,
+  retries: number,
+): Promise<T> {
+  let last: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      last = error;
+    }
+  }
+  throw last instanceof Error ? last : new Error(String(last));
+}
+
+function pairFor(replay: Replay, index: number, rawDir: string): ReplayPair {
+  const prefix = prefixFor(index);
+  const cameras = [`${rawDir}/${prefix}_camera1.mp4`];
+  if (replay.camera2_url) cameras.push(`${rawDir}/${prefix}_camera2.mp4`);
+
+  return { index, timestamp: replay.timestamp, cameras };
+}
+
 const prefixFor = (index: number): string => String(index + 1).padStart(2, "0");
 
-/** Baixa camera1 e camera2 de cada replay para `rawDir`. */
+/**
+ * Baixa camera1 e camera2 de cada replay para `rawDir`, avisando por `onPair`
+ * assim que cada lance fica completo — o que permite renderizar um lance
+ * enquanto os próximos ainda baixam.
+ */
 export async function downloadReplayPairs(
   replays: Replay[],
   rawDir: string,
-  { concurrency = 4, onProgress }: DownloadOptions = {},
-): Promise<ReplayPair[]> {
+  {
+    concurrency = 4,
+    retries = 2,
+    onProgress,
+    onPair,
+    onPairError,
+  }: DownloadOptions = {},
+): Promise<DownloadOutcome> {
   const jobs: DownloadJob[] = replays.flatMap((replay, index) => {
     const prefix = prefixFor(index);
     const urls: Array<[1 | 2, string]> = [[1, replay.camera1_url]];
@@ -110,19 +160,49 @@ export async function downloadReplayPairs(
     }));
   });
 
+  // Quantos arquivos ainda faltam para cada lance ficar completo.
+  const remaining = new Map<number, number>();
+  for (const job of jobs) {
+    remaining.set(job.index, (remaining.get(job.index) ?? 0) + 1);
+  }
+
+  const pairs: ReplayPair[] = [];
+  const failed: DownloadFailure[] = [];
+  const broken = new Set<number>();
   let done = 0;
+
   await withConcurrency(jobs, concurrency, async (job) => {
-    const result = await downloadFile(job.url, job.path);
-    done++;
-    onProgress?.({ done, total: jobs.length, job, ...result });
-    return result;
+    try {
+      const result = await withRetry(
+        () => downloadFile(job.url, job.path),
+        retries,
+      );
+      done++;
+      onProgress?.({ done, total: jobs.length, job, ...result });
+    } catch (error) {
+      done++;
+      // Um lance com duas câmeras pode falhar duas vezes; só reportamos uma.
+      if (!broken.has(job.index)) {
+        broken.add(job.index);
+        const failure: DownloadFailure = {
+          index: job.index,
+          timestamp: job.replay.timestamp,
+          error: error instanceof Error ? error.message : String(error),
+        };
+        failed.push(failure);
+        onPairError?.(failure);
+      }
+    }
+
+    const left = (remaining.get(job.index) ?? 1) - 1;
+    remaining.set(job.index, left);
+
+    if (left === 0 && !broken.has(job.index)) {
+      const pair = pairFor(job.replay, job.index, rawDir);
+      pairs.push(pair);
+      onPair?.(pair);
+    }
   });
 
-  return replays.map((replay, index) => {
-    const prefix = prefixFor(index);
-    const cameras = [`${rawDir}/${prefix}_camera1.mp4`];
-    if (replay.camera2_url) cameras.push(`${rawDir}/${prefix}_camera2.mp4`);
-
-    return { index, timestamp: replay.timestamp, cameras };
-  });
+  return { pairs, failed };
 }
