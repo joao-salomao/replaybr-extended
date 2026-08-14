@@ -20,5 +20,5 @@
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["index.ts", "src/**/*.ts"]
+  "include": ["index.ts", "server.ts", "src/**/*.ts"]
 }
