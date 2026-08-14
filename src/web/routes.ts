@@ -20,10 +20,10 @@ export interface RouteDeps {
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Intervalo máximo sem escrever nada no SSE antes de mandar um keepalive. */
+/** Longest gap without writing anything to the SSE before sending a keepalive. */
 const SSE_KEEPALIVE_MS = 15_000;
 
-interface CorpoDoJob {
+interface JobBody {
   field: unknown;
   date: unknown;
   hour: unknown;
@@ -55,7 +55,7 @@ export function createApp({ fetchReplays, jobs, publicDir }: RouteDeps): Hono {
       hours: groupReplaysByHour(replays).map((group) => ({
         hour: group.hour,
         label: group.label,
-        // Decide o formato do quadro sem baixar nada.
+        // Decides the frame layout without downloading anything.
         anyTwoCameras: group.replays.some((replay) => replay.camera2_url),
         replays: group.replays.map((replay) => ({
           timestamp: replay.timestamp,
@@ -67,54 +67,54 @@ export function createApp({ fetchReplays, jobs, publicDir }: RouteDeps): Hono {
   });
 
   app.post("/api/jobs", async (c) => {
-    let corpo: CorpoDoJob;
+    let body: JobBody;
     try {
-      corpo = (await c.req.json()) as CorpoDoJob;
+      body = (await c.req.json()) as JobBody;
     } catch {
       return c.json({ error: "Corpo inválido." }, 400);
     }
 
     const field =
-      typeof corpo.field === "string" ? resolveField(corpo.field) : null;
+      typeof body.field === "string" ? resolveField(body.field) : null;
     if (!field) return c.json({ error: "Quadra inválida." }, 400);
 
-    if (typeof corpo.date !== "string" || !DATE.test(corpo.date)) {
+    if (typeof body.date !== "string" || !DATE.test(body.date)) {
       return c.json({ error: "Data inválida. Use YYYY-MM-DD." }, 400);
     }
 
     const hour =
-      typeof corpo.hour === "string" ? normalizeHour(corpo.hour) : null;
+      typeof body.hour === "string" ? normalizeHour(body.hour) : null;
     if (!hour) return c.json({ error: "Hora inválida." }, 400);
 
     if (
-      !Array.isArray(corpo.replays) ||
-      corpo.replays.length === 0 ||
-      !corpo.replays.every((item) => typeof item === "string")
+      !Array.isArray(body.replays) ||
+      body.replays.length === 0 ||
+      !body.replays.every((item) => typeof item === "string")
     ) {
       return c.json({ error: "Selecione ao menos um lance." }, 400);
     }
 
-    const disponiveis = groupReplaysByHour(
-      await fetchReplays(field.slug, corpo.date),
+    const available = groupReplaysByHour(
+      await fetchReplays(field.slug, body.date),
     ).find((group) => group.hour === hour);
-    if (!disponiveis) return c.json({ error: "Hora sem replays." }, 400);
+    if (!available) return c.json({ error: "Hora sem replays." }, 400);
 
-    const escolhidos = new Set(corpo.replays as string[]);
-    const replays = disponiveis.replays.filter((replay) =>
-      escolhidos.has(replay.timestamp),
+    const chosen = new Set(body.replays as string[]);
+    const replays = available.replays.filter((replay) =>
+      chosen.has(replay.timestamp),
     );
-    if (replays.length !== escolhidos.size) {
+    if (replays.length !== chosen.size) {
       return c.json({ error: "Algum lance selecionado não existe." }, 400);
     }
 
     const job = jobs.create({
       field: field.slug,
       fieldLabel: field.label,
-      date: corpo.date,
+      date: body.date,
       hour,
       replays,
-      swap: corpo.swap === true,
-      concat: corpo.concat === true,
+      swap: body.swap === true,
+      concat: body.concat === true,
     });
 
     return c.json({ jobId: job.id });
@@ -133,49 +133,49 @@ export function createApp({ fetchReplays, jobs, publicDir }: RouteDeps): Hono {
     if (!job) return c.json({ error: "Esse link expirou." }, 404);
 
     return streamSSE(c, async (stream) => {
-      // O primeiro evento é o estado atual: quem reconecta não precisa saber
-      // o que perdeu.
+      // The first event is the current state: whoever reconnects doesn't
+      // need to know what they missed.
       await stream.writeSSE({ data: JSON.stringify(jobs.serialize(job)) });
 
-      const pendentes: string[] = [];
-      const cancelar = jobs.subscribe(id, (state) => {
-        pendentes.push(JSON.stringify(state));
+      const pending: string[] = [];
+      const unsubscribe = jobs.subscribe(id, (state) => {
+        pending.push(JSON.stringify(state));
       });
 
       try {
-        // `write()` do Hono engole erro de escrita: um cliente que já foi
-        // embora nunca faria essa promessa rejeitar. Sem checar `aborted`
-        // aqui, o laço ficaria sondando a cada 200ms até o job terminar
-        // sozinho, escrevendo no vazio.
-        let ultimaEscrita = Date.now();
+        // Hono's `write()` swallows write errors: a client that already left
+        // would never make that promise reject. Without checking `aborted`
+        // here, the loop would keep polling every 200ms until the job
+        // finishes on its own, writing into the void.
+        let lastWrite = Date.now();
         while (job.status === "running" && !stream.aborted) {
-          const proximo = pendentes.shift();
-          if (proximo) {
-            await stream.writeSSE({ data: proximo });
-            ultimaEscrita = Date.now();
+          const next = pending.shift();
+          if (next) {
+            await stream.writeSSE({ data: next });
+            lastWrite = Date.now();
           } else {
             await stream.sleep(200);
-            // Um job demorado pode passar bem mais que os 200ms entre
-            // eventos reais: sem um keepalive, um trecho longo de silêncio
-            // dispararia o `idleTimeout` do Bun e derrubaria a conexão.
-            // Linha de comentário SSE (começa com `:`): o EventSource do
-            // cliente a ignora, nunca chega a `onmessage`.
-            if (Date.now() - ultimaEscrita >= SSE_KEEPALIVE_MS) {
+            // A slow job can easily go well past the 200ms between real
+            // events: without a keepalive, a long silent stretch would trip
+            // Bun's `idleTimeout` and drop the connection.
+            // SSE comment line (starts with `:`): the client's EventSource
+            // ignores it, it never reaches `onmessage`.
+            if (Date.now() - lastWrite >= SSE_KEEPALIVE_MS) {
               await stream.write(": keepalive\n\n");
-              ultimaEscrita = Date.now();
+              lastWrite = Date.now();
             }
           }
         }
         if (!stream.aborted) {
-          // Drena o que sobrou, garantindo que o estado final chegue —
-          // inclusive para quem conectou num job que já tinha terminado.
-          for (const restante of pendentes) {
-            await stream.writeSSE({ data: restante });
+          // Drains whatever is left, guaranteeing the final state arrives —
+          // including for someone who connected to a job that had already finished.
+          for (const remaining of pending) {
+            await stream.writeSSE({ data: remaining });
           }
           await stream.writeSSE({ data: JSON.stringify(jobs.serialize(job)) });
         }
       } finally {
-        cancelar();
+        unsubscribe();
       }
     });
   });
@@ -184,9 +184,9 @@ export function createApp({ fetchReplays, jobs, publicDir }: RouteDeps): Hono {
     const job = jobs.get(c.req.param("id"));
     if (!job) return c.json({ error: "Esse link expirou." }, 404);
 
-    // `clips` ainda está sendo preenchido enquanto o job roda: montar agora
-    // capturaria só os clipes prontos até aqui, e esse zip parcial ficaria em
-    // cache pelas 2h de vida do job.
+    // `clips` is still being filled while the job runs: building now would
+    // only capture the clips ready so far, and that partial zip would stay
+    // cached for the job's whole 2h lifetime.
     if (job.status === "running") {
       return c.json(
         { error: "O job ainda está sendo gerado. Aguarde terminar para baixar o zip." },
@@ -194,10 +194,10 @@ export function createApp({ fetchReplays, jobs, publicDir }: RouteDeps): Hono {
       );
     }
 
-    // `??=` aqui é atômico em relação ao event loop: a checagem e a
-    // atribuição não têm `await` entre si, então duas requisições que chegam
-    // "ao mesmo tempo" nunca disparam `buildZip` duas vezes — a segunda
-    // sempre encontra a promessa da primeira já guardada.
+    // `??=` here is atomic with respect to the event loop: the check and
+    // the assignment have no `await` between them, so two requests arriving
+    // "at the same time" never trigger `buildZip` twice — the second one
+    // always finds the first one's promise already stored.
     job.zipBuild ??= (async () => {
       const tmp = `${job.dir}/todos.zip.tmp`;
       const final = `${job.dir}/todos.zip`;
@@ -205,8 +205,7 @@ export function createApp({ fetchReplays, jobs, publicDir }: RouteDeps): Hono {
         job.clips.map((clip) => clip.path),
         tmp,
       );
-      // Só troca de nome depois de pronto: ninguém consegue servir um
-      // arquivo sendo reescrito por baixo.
+      // Only renamed once ready: nobody can serve a file being overwritten underneath them.
       await rename(tmp, final);
       return final;
     })();
@@ -215,17 +214,17 @@ export function createApp({ fetchReplays, jobs, publicDir }: RouteDeps): Hono {
     try {
       zipPath = await job.zipBuild;
     } catch (error) {
-      // Falhou: libera para tentar de novo numa próxima requisição, em vez de
-      // deixar o job preso numa promessa rejeitada para sempre.
+      // Failed: free it up to retry on a future request, instead of leaving
+      // the job stuck on a rejected promise forever.
       job.zipBuild = null;
       throw error;
     }
 
-    const nome = `${job.input.field}-${job.input.date}-${job.input.hour}.zip`;
+    const filename = `${job.input.field}-${job.input.date}-${job.input.hour}.zip`;
     return new Response(Bun.file(zipPath), {
       headers: {
         "content-type": "application/zip",
-        "content-disposition": `attachment; filename="${nome}"`,
+        "content-disposition": `attachment; filename="${filename}"`,
       },
     });
   });
@@ -234,21 +233,21 @@ export function createApp({ fetchReplays, jobs, publicDir }: RouteDeps): Hono {
     const job = jobs.get(c.req.param("id"));
     if (!job) return c.json({ error: "Esse link expirou." }, 404);
 
-    // O nome precisa ser um arquivo que este job produziu: nunca caminho livre.
+    // The name has to be a file this job produced: never a free-form path.
     const name = c.req.param("name");
-    const permitidos = new Set(job.clips.map((clip) => basename(clip.path)));
-    if (job.merged) permitidos.add(basename(job.merged.path));
-    if (!permitidos.has(name)) {
+    const allowed = new Set(job.clips.map((clip) => basename(clip.path)));
+    if (job.merged) allowed.add(basename(job.merged.path));
+    if (!allowed.has(name)) {
       return c.json({ error: "Arquivo não encontrado." }, 404);
     }
 
     const file = Bun.file(`${job.dir}/${name}`);
-    const anexo = c.req.query("download") === "1";
+    const attachment = c.req.query("download") === "1";
     const headers: Record<string, string> = {
       "content-type": "video/mp4",
       "accept-ranges": "bytes",
     };
-    if (anexo) headers["content-disposition"] = `attachment; filename="${name}"`;
+    if (attachment) headers["content-disposition"] = `attachment; filename="${name}"`;
 
     const range = c.req.header("range");
     const match = range?.match(/^bytes=(\d*)-(\d*)$/);
@@ -256,13 +255,13 @@ export function createApp({ fetchReplays, jobs, publicDir }: RouteDeps): Hono {
       return new Response(file, { headers });
     }
 
-    // Sem Range o `<video>` não consegue buscar posição no meio do vídeo.
+    // Without Range the `<video>` element can't seek to a position mid-video.
     const size = file.size;
-    // "bytes=-N" é sufixo — os últimos N bytes — e não "do byte 0 até N"
-    // (RFC 7233 §2.1). Só é sufixo quando o início vem vazio.
-    const sufixo = match[1] === "";
-    const start = sufixo ? Math.max(0, size - Number(match[2])) : Number(match[1]);
-    const end = sufixo ? size - 1 : match[2] ? Number(match[2]) : size - 1;
+    // "bytes=-N" is a suffix range — the last N bytes — not "from byte 0 to
+    // N" (RFC 7233 §2.1). It's only a suffix when the start comes empty.
+    const suffix = match[1] === "";
+    const start = suffix ? Math.max(0, size - Number(match[2])) : Number(match[1]);
+    const end = suffix ? size - 1 : match[2] ? Number(match[2]) : size - 1;
     if (start >= size || end >= size || start > end) {
       return new Response(null, {
         status: 416,
@@ -280,19 +279,20 @@ export function createApp({ fetchReplays, jobs, publicDir }: RouteDeps): Hono {
     });
   });
 
-  const pagina = () =>
+  const page = () =>
     new Response(Bun.file(`${publicDir}/index.html`), {
       headers: { "content-type": "text/html; charset=utf-8" },
     });
 
-  app.get("/", pagina);
-  app.get("/j/:id", pagina);
+  app.get("/", page);
+  app.get("/j/:id", page);
 
-  // Toda rota devolve `{ error }` em português nos casos previstos, mas um
-  // throw que escapa (ex.: fetchReplays falhando) cairia no handler padrão do
-  // Hono, que devolve texto puro "Internal Server Error" — o front mostra
-  // isso cru como "Erro 500". A causa mais provável de longe é a API do
-  // ReplayBR fora do ar, então essa é diferenciada explicitamente.
+  // Every route returns `{ error }` in Portuguese for the cases we've
+  // anticipated, but a throw that escapes (e.g. fetchReplays failing) would
+  // fall through to Hono's default handler, which returns plain text
+  // "Internal Server Error" — the frontend shows that raw as "Erro 500". By
+  // far the most likely cause is the ReplayBR API being down, so that one
+  // gets called out explicitly.
   app.onError((err, c) => {
     console.error("✗ Erro não tratado numa rota:", err);
 

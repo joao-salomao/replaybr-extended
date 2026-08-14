@@ -15,8 +15,8 @@ const TIMESTAMPS = [
 
 const REPLAYS: Replay[] = TIMESTAMPS.map((timestamp) => ({
   timestamp,
-  camera1_url: `https://exemplo/${timestamp}/camera1.mp4`,
-  camera2_url: `https://exemplo/${timestamp}/camera2.mp4`,
+  camera1_url: `https://example/${timestamp}/camera1.mp4`,
+  camera2_url: `https://example/${timestamp}/camera2.mp4`,
 }));
 
 let root: string;
@@ -25,7 +25,7 @@ let store: JobStore;
 
 const render = async (request: RenderRequest): Promise<RenderResult> => {
   const path = `${request.outDir}/01_20-34-25.mp4`;
-  // ASCII de propósito: o teste de Range afirma o tamanho exato em bytes.
+  // ASCII on purpose: the Range test asserts the exact size in bytes.
   await Bun.write(path, "conteudo-do-video");
   const clip = {
     index: 0,
@@ -38,7 +38,7 @@ const render = async (request: RenderRequest): Promise<RenderResult> => {
 };
 
 beforeEach(async () => {
-  root = await mkdtemp(join(tmpdir(), "replaybr-rotas-"));
+  root = await mkdtemp(join(tmpdir(), "replaybr-routes-"));
   store = new JobStore({ root, render, now: () => 0 });
   app = createApp({
     fetchReplays: async () => REPLAYS,
@@ -51,7 +51,7 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-const criarJob = async (corpo: Record<string, unknown> = {}) =>
+const createJob = async (body: Record<string, unknown> = {}) =>
   app.request("/api/jobs", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -62,20 +62,20 @@ const criarJob = async (corpo: Record<string, unknown> = {}) =>
       replays: ["2026-08-13T20:34:25"],
       swap: true,
       concat: false,
-      ...corpo,
+      ...body,
     }),
   });
 
 /**
- * Lê um `Response` de SSE até o stream fechar e devolve o corpo (já
- * `JSON.parse`ado) de cada mensagem `data:`, na ordem em que chegaram.
+ * Reads a SSE `Response` until the stream closes and returns the
+ * (already `JSON.parse`d) body of each `data:` message, in the order they arrived.
  */
-const lerEventosSSE = async (res: Response): Promise<unknown[]> => {
+const readSSEEvents = async (res: Response): Promise<unknown[]> => {
   const reader = res.body?.getReader();
   if (!reader) return [];
 
   const decoder = new TextDecoder();
-  const eventos: unknown[] = [];
+  const events: unknown[] = [];
   let buffer = "";
 
   while (true) {
@@ -83,20 +83,20 @@ const lerEventosSSE = async (res: Response): Promise<unknown[]> => {
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
 
-    let fim: number;
-    while ((fim = buffer.indexOf("\n\n")) !== -1) {
-      const bloco = buffer.slice(0, fim);
-      buffer = buffer.slice(fim + 2);
-      const linha = bloco.split("\n").find((l) => l.startsWith("data: "));
-      if (linha) eventos.push(JSON.parse(linha.slice("data: ".length)));
+    let end: number;
+    while ((end = buffer.indexOf("\n\n")) !== -1) {
+      const block = buffer.slice(0, end);
+      buffer = buffer.slice(end + 2);
+      const line = block.split("\n").find((l) => l.startsWith("data: "));
+      if (line) events.push(JSON.parse(line.slice("data: ".length)));
     }
   }
 
-  return eventos;
+  return events;
 };
 
 describe("GET /api/fields", () => {
-  test("lista as quadras com rótulo e swap padrão", async () => {
+  test("lists the fields with label and default swap", async () => {
     const res = await app.request("/api/fields");
 
     expect(res.status).toBe(200);
@@ -108,13 +108,13 @@ describe("GET /api/fields", () => {
 });
 
 describe("GET /api/replays", () => {
-  test("devolve o dia agrupado por hora", async () => {
+  test("returns the day grouped by hour", async () => {
     const res = await app.request("/api/replays?field=four-play-3&date=2026-08-13");
-    const corpo = (await res.json()) as { hours: unknown[] };
+    const body = (await res.json()) as { hours: unknown[] };
 
     expect(res.status).toBe(200);
-    expect(corpo.hours).toHaveLength(2);
-    expect(corpo.hours[0]).toEqual({
+    expect(body.hours).toHaveLength(2);
+    expect(body.hours[0]).toEqual({
       hour: "20",
       label: "20:00",
       anyTwoCameras: true,
@@ -125,39 +125,39 @@ describe("GET /api/replays", () => {
     });
   });
 
-  test("rejeita slug inválido", async () => {
+  test("rejects an invalid slug", async () => {
     const res = await app.request("/api/replays?field=../etc&date=2026-08-13");
     expect(res.status).toBe(400);
   });
 
-  test("rejeita data em formato errado", async () => {
+  test("rejects a wrongly formatted date", async () => {
     const res = await app.request("/api/replays?field=four-play-3&date=13-08-2026");
     expect(res.status).toBe(400);
   });
 });
 
 describe("POST /api/jobs", () => {
-  test("cria o job e devolve o id", async () => {
-    const res = await criarJob();
+  test("creates the job and returns the id", async () => {
+    const res = await createJob();
 
     expect(res.status).toBe(200);
-    const corpo = (await res.json()) as { jobId: unknown };
-    expect(typeof corpo.jobId).toBe("string");
+    const body = (await res.json()) as { jobId: unknown };
+    expect(typeof body.jobId).toBe("string");
   });
 
-  test("rejeita seleção vazia", async () => {
-    expect((await criarJob({ replays: [] })).status).toBe(400);
+  test("rejects an empty selection", async () => {
+    expect((await createJob({ replays: [] })).status).toBe(400);
   });
 
-  test("rejeita hora inválida", async () => {
-    expect((await criarJob({ hour: "99" })).status).toBe(400);
+  test("rejects an invalid hour", async () => {
+    expect((await createJob({ hour: "99" })).status).toBe(400);
   });
 
-  test("rejeita timestamp que não existe na hora pedida", async () => {
-    expect((await criarJob({ replays: ["2026-08-13T23:00:00"] })).status).toBe(400);
+  test("rejects a timestamp that doesn't exist in the requested hour", async () => {
+    expect((await createJob({ replays: ["2026-08-13T23:00:00"] })).status).toBe(400);
   });
 
-  test("rejeita corpo sem os campos obrigatórios", async () => {
+  test("rejects a body missing the required fields", async () => {
     const res = await app.request("/api/jobs", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -168,52 +168,52 @@ describe("POST /api/jobs", () => {
 });
 
 describe("GET /api/jobs/:id", () => {
-  test("devolve o estado do job", async () => {
-    const { jobId } = (await (await criarJob()).json()) as { jobId: string };
+  test("returns the job state", async () => {
+    const { jobId } = (await (await createJob()).json()) as { jobId: string };
     await store.get(jobId)?.done;
 
     const res = await app.request(`/api/jobs/${jobId}`);
-    const estado = (await res.json()) as {
+    const state = (await res.json()) as {
       status: string;
       clips: Array<{ url: string }>;
     };
 
     expect(res.status).toBe(200);
-    expect(estado.status).toBe("done");
-    expect(estado.clips[0]?.url).toBe(`/files/${jobId}/01_20-34-25.mp4`);
+    expect(state.status).toBe("done");
+    expect(state.clips[0]?.url).toBe(`/files/${jobId}/01_20-34-25.mp4`);
   });
 
-  test("job inexistente devolve 404", async () => {
+  test("a nonexistent job returns 404", async () => {
     expect((await app.request("/api/jobs/naoexiste")).status).toBe(404);
   });
 });
 
 describe("GET /api/jobs/:id/events", () => {
-  test("job já concluído: primeiro evento já traz o estado final", async () => {
-    const { jobId } = (await (await criarJob()).json()) as { jobId: string };
+  test("job already done: the first event already carries the final state", async () => {
+    const { jobId } = (await (await createJob()).json()) as { jobId: string };
     await store.get(jobId)?.done;
 
     const res = await app.request(`/api/jobs/${jobId}/events`);
-    const eventos = await lerEventosSSE(res);
+    const events = await readSSEEvents(res);
 
-    expect(eventos.length).toBeGreaterThan(0);
-    const primeiro = eventos[0] as {
+    expect(events.length).toBeGreaterThan(0);
+    const first = events[0] as {
       status: string;
       clips: Array<{ url: string }>;
     };
-    expect(primeiro.status).toBe("done");
-    expect(primeiro.clips[0]?.url).toBe(`/files/${jobId}/01_20-34-25.mp4`);
+    expect(first.status).toBe("done");
+    expect(first.clips[0]?.url).toBe(`/files/${jobId}/01_20-34-25.mp4`);
   });
 
-  test("conectado no meio do job, recebe o estado final quando ele termina", async () => {
-    let liberar: () => void = () => {};
-    const portao = new Promise<void>((resolve) => {
-      liberar = resolve;
+  test("connected mid-job, receives the final state once it finishes", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
     });
 
-    // Igual ao `render` padrão, mas só termina quando o teste liberar o
-    // portão — simula um job ainda "running" no momento em que o SSE conecta.
-    const renderControlado = async (
+    // Same as the default `render`, but only finishes once the test opens
+    // the gate — simulates a job still "running" at the moment the SSE connects.
+    const controlledRender = async (
       request: RenderRequest,
     ): Promise<RenderResult> => {
       const path = `${request.outDir}/01_20-34-25.mp4`;
@@ -225,22 +225,22 @@ describe("GET /api/jobs/:id/events", () => {
         cameras: 2 as const,
       };
       request.onClip(clip);
-      await portao;
+      await gate;
       return { clips: [clip], merged: null, failed: [] };
     };
 
-    const storeControlado = new JobStore({
+    const controlledStore = new JobStore({
       root,
-      render: renderControlado,
+      render: controlledRender,
       now: () => 0,
     });
-    const appControlado = createApp({
+    const controlledApp = createApp({
       fetchReplays: async () => REPLAYS,
-      jobs: storeControlado,
+      jobs: controlledStore,
       publicDir: "public",
     });
 
-    const jobRes = await appControlado.request("/api/jobs", {
+    const jobRes = await controlledApp.request("/api/jobs", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -253,29 +253,29 @@ describe("GET /api/jobs/:id/events", () => {
       }),
     });
     const { jobId } = (await jobRes.json()) as { jobId: string };
-    const job = storeControlado.get(jobId);
+    const job = controlledStore.get(jobId);
     expect(job?.status).toBe("running");
 
-    const sseRes = await appControlado.request(`/api/jobs/${jobId}/events`);
+    const sseRes = await controlledApp.request(`/api/jobs/${jobId}/events`);
 
-    // Solta o render só depois de já estar conectado ao stream: é o cenário
-    // que prova que nenhuma atualização se perde na virada running → done.
-    liberar();
-    const eventos = await lerEventosSSE(sseRes);
+    // Only release the render once already connected to the stream: this is
+    // the scenario that proves no update is lost on the running → done switch.
+    release();
+    const events = await readSSEEvents(sseRes);
 
-    const ultimo = eventos.at(-1) as {
+    const last = events.at(-1) as {
       status: string;
       clips: Array<{ url: string }>;
     };
-    expect(ultimo.status).toBe("done");
-    expect(ultimo.clips).toHaveLength(1);
-    expect(ultimo.clips[0]?.url).toBe(`/files/${jobId}/01_20-34-25.mp4`);
+    expect(last.status).toBe("done");
+    expect(last.clips).toHaveLength(1);
+    expect(last.clips[0]?.url).toBe(`/files/${jobId}/01_20-34-25.mp4`);
   });
 });
 
 describe("GET /files/:id/:name", () => {
-  test("serve o arquivo inline por padrão", async () => {
-    const { jobId } = (await (await criarJob()).json()) as { jobId: string };
+  test("serves the file inline by default", async () => {
+    const { jobId } = (await (await createJob()).json()) as { jobId: string };
     await store.get(jobId)?.done;
 
     const res = await app.request(`/files/${jobId}/01_20-34-25.mp4`);
@@ -286,8 +286,8 @@ describe("GET /files/:id/:name", () => {
     expect(await res.text()).toBe("conteudo-do-video");
   });
 
-  test("com ?download=1 responde como anexo", async () => {
-    const { jobId } = (await (await criarJob()).json()) as { jobId: string };
+  test("with ?download=1 it responds as an attachment", async () => {
+    const { jobId } = (await (await createJob()).json()) as { jobId: string };
     await store.get(jobId)?.done;
 
     const res = await app.request(`/files/${jobId}/01_20-34-25.mp4?download=1`);
@@ -295,8 +295,8 @@ describe("GET /files/:id/:name", () => {
     expect(res.headers.get("content-disposition")).toContain("attachment");
   });
 
-  test("responde 206 a um Range", async () => {
-    const { jobId } = (await (await criarJob()).json()) as { jobId: string };
+  test("responds 206 to a Range request", async () => {
+    const { jobId } = (await (await createJob()).json()) as { jobId: string };
     await store.get(jobId)?.done;
 
     const res = await app.request(`/files/${jobId}/01_20-34-25.mp4`, {
@@ -307,8 +307,8 @@ describe("GET /files/:id/:name", () => {
     expect(res.headers.get("content-range")).toBe("bytes 0-4/17");
   });
 
-  test("range de sufixo (bytes=-5) devolve os últimos bytes, não os 5 primeiros", async () => {
-    const { jobId } = (await (await criarJob()).json()) as { jobId: string };
+  test("a suffix range (bytes=-5) returns the last bytes, not the first 5", async () => {
+    const { jobId } = (await (await createJob()).json()) as { jobId: string };
     await store.get(jobId)?.done;
 
     const res = await app.request(`/files/${jobId}/01_20-34-25.mp4`, {
@@ -317,12 +317,12 @@ describe("GET /files/:id/:name", () => {
 
     expect(res.status).toBe(206);
     expect(res.headers.get("content-range")).toBe("bytes 12-16/17");
-    // "conteudo-do-video" tem 17 bytes; os últimos 5 são "video".
+    // "conteudo-do-video" is 17 bytes; the last 5 are "video".
     expect(await res.text()).toBe("video");
   });
 
-  test("recusa nome fora da lista de clipes do job", async () => {
-    const { jobId } = (await (await criarJob()).json()) as { jobId: string };
+  test("refuses a name outside the job's clip list", async () => {
+    const { jobId } = (await (await createJob()).json()) as { jobId: string };
     await store.get(jobId)?.done;
 
     expect((await app.request(`/files/${jobId}/segredo.mp4`)).status).toBe(404);
@@ -330,8 +330,8 @@ describe("GET /files/:id/:name", () => {
 });
 
 describe("GET /api/jobs/:id/zip", () => {
-  test("devolve o zip como anexo", async () => {
-    const { jobId } = (await (await criarJob()).json()) as { jobId: string };
+  test("returns the zip as an attachment", async () => {
+    const { jobId } = (await (await createJob()).json()) as { jobId: string };
     await store.get(jobId)?.done;
 
     const res = await app.request(`/api/jobs/${jobId}/zip`);
@@ -341,17 +341,17 @@ describe("GET /api/jobs/:id/zip", () => {
     expect(res.headers.get("content-disposition")).toContain("attachment");
   });
 
-  test("zip de job inexistente devolve 404", async () => {
+  test("the zip for a nonexistent job returns 404", async () => {
     expect((await app.request("/api/jobs/naoexiste/zip")).status).toBe(404);
   });
 
-  test("pedido no meio do job devolve 409 e não deixa zip parcial em cache", async () => {
-    let liberar: () => void = () => {};
-    const portao = new Promise<void>((resolve) => {
-      liberar = resolve;
+  test("a request mid-job returns 409 and leaves no partial zip cached", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
     });
 
-    const renderControlado = async (
+    const controlledRender = async (
       request: RenderRequest,
     ): Promise<RenderResult> => {
       const path = `${request.outDir}/01_20-34-25.mp4`;
@@ -363,22 +363,22 @@ describe("GET /api/jobs/:id/zip", () => {
         cameras: 2 as const,
       };
       request.onClip(clip);
-      await portao;
+      await gate;
       return { clips: [clip], merged: null, failed: [] };
     };
 
-    const storeControlado = new JobStore({
+    const controlledStore = new JobStore({
       root,
-      render: renderControlado,
+      render: controlledRender,
       now: () => 0,
     });
-    const appControlado = createApp({
+    const controlledApp = createApp({
       fetchReplays: async () => REPLAYS,
-      jobs: storeControlado,
+      jobs: controlledStore,
       publicDir: "public",
     });
 
-    const jobRes = await appControlado.request("/api/jobs", {
+    const jobRes = await controlledApp.request("/api/jobs", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -391,33 +391,33 @@ describe("GET /api/jobs/:id/zip", () => {
       }),
     });
     const { jobId } = (await jobRes.json()) as { jobId: string };
-    const job = storeControlado.get(jobId);
+    const job = controlledStore.get(jobId);
     if (!job) throw new Error("job não criado");
 
-    // Espera o clipe aparecer: prova que o pedido de zip chega com o job "no
-    // meio" — já com conteúdo parcial — e não antes de qualquer clipe existir.
+    // Wait for the clip to show up: proves the zip request arrives while the
+    // job is "mid-flight" — already with partial content — and not before any clip exists.
     while (job.clips.length === 0) {
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
 
-    const meioRes = await appControlado.request(`/api/jobs/${jobId}/zip`);
-    expect(meioRes.status).toBe(409);
-    const corpoMeio = (await meioRes.json()) as { error: string };
-    expect(corpoMeio.error).toContain("gerado");
+    const midRes = await controlledApp.request(`/api/jobs/${jobId}/zip`);
+    expect(midRes.status).toBe(409);
+    const midBody = (await midRes.json()) as { error: string };
+    expect(midBody.error).toContain("gerado");
 
-    // Nada foi construído nem cacheado a partir do pedido rejeitado.
+    // Nothing was built or cached from the rejected request.
     expect(job.zipBuild).toBeNull();
 
-    liberar();
+    release();
     await job.done;
 
-    const finalRes = await appControlado.request(`/api/jobs/${jobId}/zip`);
+    const finalRes = await controlledApp.request(`/api/jobs/${jobId}/zip`);
     expect(finalRes.status).toBe(200);
     expect((await finalRes.arrayBuffer()).byteLength).toBeGreaterThan(0);
   });
 
-  test("duas requisições concorrentes resultam num único zip íntegro", async () => {
-    const { jobId } = (await (await criarJob()).json()) as { jobId: string };
+  test("two concurrent requests result in a single intact zip", async () => {
+    const { jobId } = (await (await createJob()).json()) as { jobId: string };
     await store.get(jobId)?.done;
 
     const [res1, res2] = await Promise.all([
@@ -430,14 +430,14 @@ describe("GET /api/jobs/:id/zip", () => {
 
     const bytes1 = new Uint8Array(await res1.arrayBuffer());
     const bytes2 = new Uint8Array(await res2.arrayBuffer());
-    // As duas respostas vieram do mesmo arquivo final, byte a byte — nenhuma
-    // pegou uma escrita pela metade da outra.
+    // Both responses came from the same final file, byte for byte — neither
+    // one caught a half-finished write from the other.
     expect(bytes1).toEqual(bytes2);
     expect(bytes1.length).toBeGreaterThan(0);
 
-    const arquivo = join(root, "verificacao.zip");
-    await Bun.write(arquivo, bytes1);
-    const proc = Bun.spawn(["unzip", "-t", arquivo], {
+    const file = join(root, "verificacao.zip");
+    await Bun.write(file, bytes1);
+    const proc = Bun.spawn(["unzip", "-t", file], {
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -446,8 +446,8 @@ describe("GET /api/jobs/:id/zip", () => {
 });
 
 describe("app.onError", () => {
-  test("API do ReplayBR fora do ar devolve mensagem em português, não texto puro", async () => {
-    const appIndisponivel = createApp({
+  test("ReplayBR API down returns a Portuguese message, not plain text", async () => {
+    const unavailableApp = createApp({
       fetchReplays: async () => {
         throw new ReplayBrUnavailableError("timeout falando com a API");
       },
@@ -455,18 +455,18 @@ describe("app.onError", () => {
       publicDir: "public",
     });
 
-    const res = await appIndisponivel.request(
+    const res = await unavailableApp.request(
       "/api/replays?field=four-play-3&date=2026-08-13",
     );
 
     expect(res.status).toBe(502);
     expect(res.headers.get("content-type")).toContain("application/json");
-    const corpo = (await res.json()) as { error: string };
-    expect(corpo.error).toContain("ReplayBR");
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("ReplayBR");
   });
 
-  test("erro inesperado ainda vira JSON em português, não o 500 padrão do Hono", async () => {
-    const appQuebrado = createApp({
+  test("an unexpected error still becomes Portuguese JSON, not Hono's default 500", async () => {
+    const brokenApp = createApp({
       fetchReplays: async () => {
         throw new Error("bug qualquer");
       },
@@ -474,12 +474,12 @@ describe("app.onError", () => {
       publicDir: "public",
     });
 
-    const res = await appQuebrado.request(
+    const res = await brokenApp.request(
       "/api/replays?field=four-play-3&date=2026-08-13",
     );
 
     expect(res.status).toBe(500);
-    const corpo = (await res.json()) as { error: string };
-    expect(corpo.error).not.toContain("Internal Server Error");
+    const body = (await res.json()) as { error: string };
+    expect(body.error).not.toContain("Internal Server Error");
   });
 });
