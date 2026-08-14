@@ -3,7 +3,7 @@ import { fetchReplaysForDate } from "./src/api.ts";
 import { assertFfmpegAvailable } from "./src/ffmpeg.ts";
 import { JobStore } from "./src/web/jobs.ts";
 import { createApp } from "./src/web/routes.ts";
-import { rm, mkdir } from "node:fs/promises";
+import { rm, mkdir, readdir } from "node:fs/promises";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const WORK_DIR = process.env.WORK_DIR ?? "work";
@@ -13,8 +13,13 @@ const SWEEP_INTERVAL_MS = 10 * 60 * 1000;
 await assertFfmpegAvailable();
 
 // O estado dos jobs é em memória: o que sobrou de um restart é inalcançável.
-await rm(WORK_DIR, { recursive: true, force: true });
+// Limpa o conteúdo em vez de recriar o diretório em si: quando WORK_DIR é o
+// ponto de montagem de um volume (caso do Docker), remover o diretório falha
+// com EBUSY — só o conteúdo pode ser apagado.
 await mkdir(WORK_DIR, { recursive: true });
+for (const entrada of await readdir(WORK_DIR)) {
+  await rm(`${WORK_DIR}/${entrada}`, { recursive: true, force: true });
+}
 
 const jobs = new JobStore({ root: WORK_DIR });
 
