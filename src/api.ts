@@ -1,5 +1,8 @@
 const API_BASE = "https://replays.replaybr.com.br";
 
+/** Teto de espera pela listagem de replays — resposta pequena, sem motivo para demorar. */
+const API_TIMEOUT_MS = 15 * 1000;
+
 /** Um lance gravado. Nem todo campo (nem todo lance) tem a segunda câmera. */
 export interface Replay {
   /** ISO local sem timezone, ex: "2026-07-29T20:02:49" */
@@ -26,7 +29,7 @@ export async function fetchReplaysForDate(
     fieldName,
   )}&date=${encodeURIComponent(date)}`;
 
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(API_TIMEOUT_MS) });
   if (!res.ok) {
     throw new Error(`API respondeu ${res.status} ${res.statusText} para ${url}`);
   }

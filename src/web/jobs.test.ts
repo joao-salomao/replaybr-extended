@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Replay } from "../api.ts";
 import type { RenderRequest, RenderResult } from "../render.ts";
-import { JobStore, TTL_MS, type JobState } from "./jobs.ts";
+import { JobStore, RUNNING_CEILING_MS, TTL_MS, type JobState } from "./jobs.ts";
 
 const replay = (timestamp: string): Replay => ({
   timestamp,
@@ -195,6 +195,37 @@ describe("JobStore.sweep", () => {
 
     expect(await store.sweep(TTL_MS * 10)).toEqual([]);
     expect(store.get(job.id)).toBeDefined();
+  });
+
+  test("job preso rodando além do teto vira error, e some numa passada seguinte", async () => {
+    let agora = 0;
+    const store = new JobStore({
+      root,
+      render: () => new Promise<RenderResult>(() => {}),
+      newId,
+      now: () => agora,
+    });
+    const job = store.create(ENTRADA);
+    await mkdir(job.dir, { recursive: true });
+
+    // Ainda dentro do teto: continua rodando.
+    agora = RUNNING_CEILING_MS - 1;
+    expect(await store.sweep(agora)).toEqual([]);
+    expect(store.get(job.id)?.status).toBe("running");
+
+    // Passou do teto: vira error, mas ainda não é removido — só ganhou
+    // `finishedAt` agora, e o TTL conta a partir daí.
+    agora = RUNNING_CEILING_MS + 1;
+    expect(await store.sweep(agora)).toEqual([]);
+    const marcado = store.get(job.id);
+    expect(marcado?.status).toBe("error");
+    expect(marcado?.finishedAt).toBe(agora);
+    expect(marcado?.error).toBeTruthy();
+
+    // Só depois do TTL contado a partir da marcação é que o diretório some.
+    agora = RUNNING_CEILING_MS + 1 + TTL_MS + 1;
+    expect(await store.sweep(agora)).toEqual([job.id]);
+    expect(store.get(job.id)).toBeUndefined();
   });
 
   test("continua a varredura mesmo se um job não conseguir ser removido", async () => {

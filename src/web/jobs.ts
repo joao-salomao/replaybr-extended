@@ -12,6 +12,16 @@ import {
 /** Arquivos são apagados 2h depois que o job termina. */
 export const TTL_MS = 2 * 60 * 60 * 1000;
 
+/**
+ * Teto de tempo rodando. Sem isso, um job que trava (ffmpeg pendurado, ou
+ * qualquer travamento que os timeouts de rede não cobrem) fica em `running`
+ * pelo resto da vida do processo: `sweep` pula jobs sem `finishedAt`, então
+ * nada mais o alcança — diretório nunca liberado, listeners nunca limpos, SSE
+ * sondando para sempre. Generoso o bastante para o pior caso comum (vários
+ * arquivos, cada um tentando 3x com timeout de rede), mas finito.
+ */
+export const RUNNING_CEILING_MS = 60 * 60 * 1000;
+
 const RENDER_DEFAULTS = {
   fps: 30,
   crf: 20,
@@ -66,6 +76,8 @@ export interface Job {
   merged: { path: string; duration: number } | null;
   failed: RenderResult["failed"];
   error: string | null;
+  /** Quando o job começou a rodar — usado pelo teto do `sweep`. */
+  startedAt: number;
   finishedAt: number | null;
   /**
    * Memoiza a *promessa* de montagem do zip, não o caminho: duas requisições
@@ -117,6 +129,7 @@ export class JobStore {
       merged: null,
       failed: [],
       error: null,
+      startedAt: this.now(),
       finishedAt: null,
       zipBuild: null,
       done: Promise.resolve(),
@@ -184,6 +197,16 @@ export class JobStore {
     const removidos: string[] = [];
 
     for (const [id, job] of this.jobs) {
+      // Preso rodando além do teto: marca como erro para que passe a ter
+      // `finishedAt` e, com isso, entre na contagem normal do TTL numa
+      // passada futura — não é removido nesta mesma passada.
+      if (job.status === "running" && now - job.startedAt > RUNNING_CEILING_MS) {
+        job.status = "error";
+        job.error = "O job travou e foi encerrado depois de rodar tempo demais.";
+        job.finishedAt = now;
+        this.notify(job);
+      }
+
       if (job.finishedAt === null) continue;
       if (now - job.finishedAt <= TTL_MS) continue;
 

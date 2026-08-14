@@ -2,6 +2,16 @@ import { stat, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Replay } from "./api.ts";
 
+/**
+ * Teto por tentativa de download de um arquivo. `fetch` do Bun não tem timeout
+ * padrão: um CDN que manda os headers e trava o corpo prenderia
+ * `Bun.write(destination, res)` para sempre, sem que `withRetry` percebesse —
+ * ele só reage a rejeições, não a travamentos. Generoso o bastante para um
+ * arquivo de ~7 MB numa conexão ruim (a ~300 kbps isso leva pouco mais de 3
+ * min); acima disso é mais provável estar travado do que só lento.
+ */
+export const DOWNLOAD_TIMEOUT_MS = 3 * 60 * 1000;
+
 export interface DownloadJob {
   /** Índice do replay ao qual este arquivo pertence. */
   index: number;
@@ -94,7 +104,7 @@ async function downloadFile(
   const existing = await fileSize(destination);
   if (existing > 0) return { skipped: true, bytes: existing };
 
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
   if (!res.ok) {
     throw new Error(`Download falhou (${res.status}) para ${url}`);
   }
