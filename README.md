@@ -12,12 +12,21 @@ Na web você escolhe a quadra, a data e a hora, vê as câmeras originais de cad
 
 ## Requisitos
 
-- `bun`
-- `ffmpeg` no PATH (`brew install ffmpeg`)
+Só `bun`:
 
 ```bash
 bun install
 ```
+
+O `ffmpeg` vem junto — `bun install` baixa um binário estático para a sua plataforma (via `ffmpeg-static`) e o projeto usa esse. Não precisa de `brew install ffmpeg`.
+
+Para usar outro ffmpeg (uma build sua, ou o do sistema), aponte `FFMPEG_PATH`:
+
+```bash
+FFMPEG_PATH=/opt/homebrew/bin/ffmpeg bun run index.ts 2026-07-29 20
+```
+
+Em plataformas sem build estática disponível, o projeto cai para o `ffmpeg` do PATH.
 
 ## Uso
 
@@ -127,28 +136,6 @@ docker compose up -d
 ```
 
 Variáveis: `PORT` (padrão `3000`) e `WORK_DIR` (padrão `/app/work`, montado como volume).
-
-## Binário único
-
-Gera um executável standalone em `dist/replaybr-extended`, com o runtime do Bun embutido:
-
-```bash
-bun run build
-```
-
-O binário roda sem Bun instalado e de qualquer diretório (os caminhos de saída são relativos ao diretório atual):
-
-```bash
-./dist/replaybr-extended 2026-07-29 20
-```
-
-Por incluir o runtime, o binário é grande (~58 MB no macOS arm64, ~100 MB no alvo Linux). E **`ffmpeg` continua sendo uma dependência externa** — não é embutido.
-
-Para gerar para outra plataforma, acrescente `--target`:
-
-```bash
-bun build ./index.ts --compile --minify --target=bun-linux-x64 --outfile dist/replaybr-extended-linux
-```
 
 ## Desenvolvimento
 
