@@ -9,13 +9,13 @@ export interface Replay {
   camera2_url?: string;
 }
 
-export interface SlotGrouping {
-  slots: Record<string, Replay[]>;
-  /** Rótulos "HH:MM" ordenados. */
-  keys: string[];
+export interface HourGroup {
+  /** Hora com dois dígitos, ex: "20". */
+  hour: string;
+  /** Rótulo exibido, ex: "20:00". */
+  label: string;
+  replays: Replay[];
 }
-
-const pad = (n: number): string => String(n).padStart(2, "0");
 
 /** Busca todos os replays de um campo em uma data (YYYY-MM-DD). */
 export async function fetchReplaysForDate(
@@ -36,46 +36,37 @@ export async function fetchReplaysForDate(
 }
 
 /**
- * Agrupa replays em slots de 30 minutos, replicando a lógica do site.
- *
- * O slot não é simplesmente `floor(minuto/30)`: um replay antes dos :30 pertence
- * ao slot da hora anterior, exceto quando cai na primeira hora com replays no dia
- * (aí o slot é HH:00). É assim que o site rotula "20:30" cobrindo 20:30–21:29.
+ * Agrupa replays pela hora do timestamp, exatamente como o site oficial faz —
+ * é o mesmo segmento que aparece na URL do vídeo (`.../2026-08-13/21/...`).
  */
-export function groupReplaysIntoSlots(replays: Replay[]): SlotGrouping {
+export function groupReplaysByHour(replays: Replay[]): HourGroup[] {
   const sorted = [...replays].sort((a, b) =>
     a.timestamp.localeCompare(b.timestamp),
   );
 
-  const slots: Record<string, Replay[]> = {};
-  let firstHour: number | null = null;
-
+  const byHour = new Map<string, Replay[]>();
   for (const replay of sorted) {
-    // Timestamps vêm como ISO local ("2026-07-29T20:02:49"), sem timezone.
-    // Fatiar a string evita qualquer conversão de fuso.
-    const hour = Number(replay.timestamp.slice(11, 13));
-    const minute = Number(replay.timestamp.slice(14, 16));
-
-    if (firstHour === null) firstHour = hour;
-
-    let slotHour: number;
-    let slotMinute: number;
-    if (minute < 30) {
-      if (hour === firstHour) {
-        slotHour = hour;
-        slotMinute = 0;
-      } else {
-        slotHour = hour - 1;
-        slotMinute = 30;
-      }
-    } else {
-      slotHour = hour;
-      slotMinute = 30;
-    }
-
-    const key = `${pad(slotHour)}:${pad(slotMinute)}`;
-    (slots[key] ??= []).push(replay);
+    // Timestamps vêm como ISO local, sem timezone. Fatiar a string evita
+    // qualquer conversão de fuso.
+    const hour = replay.timestamp.slice(11, 13);
+    const list = byHour.get(hour);
+    if (list) list.push(replay);
+    else byHour.set(hour, [replay]);
   }
 
-  return { slots, keys: Object.keys(slots).sort() };
+  return [...byHour.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([hour, list]) => ({ hour, label: `${hour}:00`, replays: list }));
+}
+
+/** Aceita "20", "20:30", "2030" ou "20h30" e devolve a hora ("20"). */
+export function normalizeHour(input: string): string | null {
+  const match = input.trim().match(/^(\d{1,2})(?:[:h.]?(\d{2}))?$/);
+  if (!match?.[1]) return null;
+
+  const hour = Number(match[1]);
+  const minute = match[2] === undefined ? 0 : Number(match[2]);
+  if (hour > 23 || minute > 59) return null;
+
+  return String(hour).padStart(2, "0");
 }
