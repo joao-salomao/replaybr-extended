@@ -3,17 +3,17 @@ import { dirname } from "node:path";
 import type { Replay } from "./api.ts";
 
 /**
- * Teto por tentativa de download de um arquivo. `fetch` do Bun não tem timeout
- * padrão: um CDN que manda os headers e trava o corpo prenderia
- * `Bun.write(destination, res)` para sempre, sem que `withRetry` percebesse —
- * ele só reage a rejeições, não a travamentos. Generoso o bastante para um
- * arquivo de ~7 MB numa conexão ruim (a ~300 kbps isso leva pouco mais de 3
- * min); acima disso é mais provável estar travado do que só lento.
+ * Ceiling per download attempt of a file. Bun's `fetch` has no default
+ * timeout: a CDN that sends headers and then hangs the body would keep
+ * `Bun.write(destination, res)` stuck forever, without `withRetry` noticing
+ * it — it only reacts to rejections, not hangs. Generous enough for a ~7 MB
+ * file on a bad connection (at ~300 kbps that takes a bit over 3 min);
+ * beyond that it's more likely stuck than just slow.
  */
 export const DOWNLOAD_TIMEOUT_MS = 3 * 60 * 1000;
 
 export interface DownloadJob {
-  /** Índice do replay ao qual este arquivo pertence. */
+  /** Index of the replay this file belongs to. */
   index: number;
   replay: Replay;
   camera: 1 | 2;
@@ -22,7 +22,7 @@ export interface DownloadJob {
 }
 
 export interface DownloadResult {
-  /** `true` quando o arquivo já existia e o download foi reaproveitado. */
+  /** `true` when the file already existed and the download was reused. */
   skipped: boolean;
   bytes: number;
 }
@@ -33,11 +33,11 @@ export interface DownloadProgress extends DownloadResult {
   job: DownloadJob;
 }
 
-/** Um replay com seus arquivos locais já baixados. */
+/** A replay with its local files already downloaded. */
 export interface ReplayPair {
   index: number;
   timestamp: string;
-  /** Uma ou duas câmeras, na ordem. */
+  /** One or two cameras, in order. */
   cameras: string[];
 }
 
@@ -54,16 +54,16 @@ export interface DownloadOutcome {
 
 export interface DownloadOptions {
   concurrency?: number;
-  /** Tentativas extras por arquivo. Padrão 2, ou seja, 3 no total. */
+  /** Extra attempts per file. Defaults to 2, i.e. 3 total. */
   retries?: number;
   onProgress?: (progress: DownloadProgress) => void;
-  /** Chamado quando todos os arquivos de um lance terminam, na ordem de conclusão. */
+  /** Called once all files of a play finish, in completion order. */
   onPair?: (pair: ReplayPair) => void;
-  /** Chamado uma vez por lance que perdeu algum arquivo. */
+  /** Called once per play that lost some file. */
   onPairError?: (failure: DownloadFailure) => void;
 }
 
-/** Roda `worker` sobre `items` com no máximo `limit` em paralelo, preservando a ordem. */
+/** Runs `worker` over `items` with at most `limit` in parallel, preserving order. */
 async function withConcurrency<T, R>(
   items: T[],
   limit: number,
@@ -100,7 +100,7 @@ async function downloadFile(
   url: string,
   destination: string,
 ): Promise<DownloadResult> {
-  // Retomada barata: se o arquivo já existe e não está vazio, não baixa de novo.
+  // Cheap resume: if the file already exists and isn't empty, skip re-downloading it.
   const existing = await fileSize(destination);
   if (existing > 0) return { skipped: true, bytes: existing };
 
@@ -140,9 +140,9 @@ function pairFor(replay: Replay, index: number, rawDir: string): ReplayPair {
 const prefixFor = (index: number): string => String(index + 1).padStart(2, "0");
 
 /**
- * Baixa camera1 e camera2 de cada replay para `rawDir`, avisando por `onPair`
- * assim que cada lance fica completo — o que permite renderizar um lance
- * enquanto os próximos ainda baixam.
+ * Downloads camera1 and camera2 for each replay into `rawDir`, notifying via
+ * `onPair` as soon as each play becomes complete — which lets a play be
+ * rendered while the next ones are still downloading.
  */
 export async function downloadReplayPairs(
   replays: Replay[],
@@ -158,7 +158,7 @@ export async function downloadReplayPairs(
   const jobs: DownloadJob[] = replays.flatMap((replay, index) => {
     const prefix = prefixFor(index);
     const urls: Array<[1 | 2, string]> = [[1, replay.camera1_url]];
-    // A segunda câmera é opcional e varia por lance, não só por campo.
+    // The second camera is optional and varies per play, not just per field.
     if (replay.camera2_url) urls.push([2, replay.camera2_url]);
 
     return urls.map(([camera, url]) => ({
@@ -170,7 +170,7 @@ export async function downloadReplayPairs(
     }));
   });
 
-  // Quantos arquivos ainda faltam para cada lance ficar completo.
+  // How many files are still missing for each play to become complete.
   const remaining = new Map<number, number>();
   for (const job of jobs) {
     remaining.set(job.index, (remaining.get(job.index) ?? 0) + 1);
@@ -191,7 +191,7 @@ export async function downloadReplayPairs(
       onProgress?.({ done, total: jobs.length, job, ...result });
     } catch (error) {
       done++;
-      // Um lance com duas câmeras pode falhar duas vezes; só reportamos uma.
+      // A play with two cameras can fail twice; we only report it once.
       if (!broken.has(job.index)) {
         broken.add(job.index);
         const failure: DownloadFailure = {

@@ -7,9 +7,9 @@ import { downloadReplayPairs, type ReplayPair } from "./download.ts";
 
 const replay = (timestamp: string, cameras: 1 | 2): Replay => ({
   timestamp,
-  camera1_url: `https://exemplo/${timestamp}/camera1.mp4`,
+  camera1_url: `https://example/${timestamp}/camera1.mp4`,
   ...(cameras === 2
-    ? { camera2_url: `https://exemplo/${timestamp}/camera2.mp4` }
+    ? { camera2_url: `https://example/${timestamp}/camera2.mp4` }
     : {}),
 });
 
@@ -17,7 +17,7 @@ const originalFetch = globalThis.fetch;
 let dir: string;
 let calls: string[];
 
-/** Substitui o fetch: cada URL em `failing` falha `failures` vezes antes de dar certo. */
+/** Replaces fetch: each URL in `failing` fails `failures` times before succeeding. */
 function stubFetch(failing: Record<string, number> = {}): void {
   const remaining = { ...failing };
   globalThis.fetch = (async (input: string | URL | Request) => {
@@ -25,7 +25,7 @@ function stubFetch(failing: Record<string, number> = {}): void {
     calls.push(url);
     if ((remaining[url] ?? 0) > 0) {
       remaining[url]!--;
-      throw new Error("rede caiu");
+      throw new Error("network down");
     }
     return new Response(new Uint8Array([1, 2, 3, 4]));
   }) as typeof fetch;
@@ -42,31 +42,31 @@ afterEach(async () => {
 });
 
 describe("downloadReplayPairs", () => {
-  test("avisa cada par assim que ele fica completo", async () => {
+  test("notifies each pair as soon as it becomes complete", async () => {
     stubFetch();
     const replays = [replay("2026-08-13T20:34:25", 2), replay("2026-08-13T20:35:39", 2)];
-    const entregues: ReplayPair[] = [];
+    const delivered: ReplayPair[] = [];
 
     const outcome = await downloadReplayPairs(replays, dir, {
       concurrency: 1,
-      onPair: (pair) => entregues.push(pair),
+      onPair: (pair) => delivered.push(pair),
     });
 
-    expect(entregues).toHaveLength(2);
-    expect(entregues[0]?.cameras).toHaveLength(2);
+    expect(delivered).toHaveLength(2);
+    expect(delivered[0]?.cameras).toHaveLength(2);
     expect(outcome.pairs).toHaveLength(2);
     expect(outcome.failed).toEqual([]);
   });
 
-  test("lance de uma câmera só entrega um arquivo", async () => {
+  test("a single-camera play delivers a single file", async () => {
     stubFetch();
     const outcome = await downloadReplayPairs([replay("2026-08-13T20:34:25", 1)], dir);
 
     expect(outcome.pairs[0]?.cameras).toHaveLength(1);
   });
 
-  test("tenta 3 vezes antes de desistir de um arquivo", async () => {
-    const url = "https://exemplo/2026-08-13T20:34:25/camera1.mp4";
+  test("tries a file 3 times before giving up on it", async () => {
+    const url = "https://example/2026-08-13T20:34:25/camera1.mp4";
     stubFetch({ [url]: 2 });
 
     const outcome = await downloadReplayPairs([replay("2026-08-13T20:34:25", 1)], dir);
@@ -76,33 +76,33 @@ describe("downloadReplayPairs", () => {
     expect(outcome.pairs).toHaveLength(1);
   });
 
-  test("um lance que falha é pulado, e os outros continuam", async () => {
-    const url = "https://exemplo/2026-08-13T20:34:25/camera1.mp4";
+  test("a play that fails is skipped, and the others continue", async () => {
+    const url = "https://example/2026-08-13T20:34:25/camera1.mp4";
     stubFetch({ [url]: 99 });
     const replays = [replay("2026-08-13T20:34:25", 1), replay("2026-08-13T20:35:39", 1)];
-    const entregues: ReplayPair[] = [];
+    const delivered: ReplayPair[] = [];
 
     const outcome = await downloadReplayPairs(replays, dir, {
       concurrency: 1,
-      onPair: (pair) => entregues.push(pair),
+      onPair: (pair) => delivered.push(pair),
     });
 
     expect(outcome.failed).toHaveLength(1);
     expect(outcome.failed[0]?.timestamp).toBe("2026-08-13T20:34:25");
-    expect(entregues.map((p) => p.timestamp)).toEqual(["2026-08-13T20:35:39"]);
+    expect(delivered.map((p) => p.timestamp)).toEqual(["2026-08-13T20:35:39"]);
   });
 
-  test("um lance com uma câmera quebrada não entrega par pela metade", async () => {
-    const url = "https://exemplo/2026-08-13T20:34:25/camera2.mp4";
+  test("a play with one broken camera does not deliver a half pair", async () => {
+    const url = "https://example/2026-08-13T20:34:25/camera2.mp4";
     stubFetch({ [url]: 99 });
-    const entregues: ReplayPair[] = [];
+    const delivered: ReplayPair[] = [];
 
     const outcome = await downloadReplayPairs([replay("2026-08-13T20:34:25", 2)], dir, {
       concurrency: 1,
-      onPair: (pair) => entregues.push(pair),
+      onPair: (pair) => delivered.push(pair),
     });
 
-    expect(entregues).toEqual([]);
+    expect(delivered).toEqual([]);
     expect(outcome.failed).toHaveLength(1);
   });
 });
