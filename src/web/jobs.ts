@@ -9,16 +9,17 @@ import {
   type RenderResult,
 } from "../render.ts";
 
-/** Arquivos são apagados 2h depois que o job termina. */
+/** Files are deleted 2h after the job finishes. */
 export const TTL_MS = 2 * 60 * 60 * 1000;
 
 /**
- * Teto de tempo rodando. Sem isso, um job que trava (ffmpeg pendurado, ou
- * qualquer travamento que os timeouts de rede não cobrem) fica em `running`
- * pelo resto da vida do processo: `sweep` pula jobs sem `finishedAt`, então
- * nada mais o alcança — diretório nunca liberado, listeners nunca limpos, SSE
- * sondando para sempre. Generoso o bastante para o pior caso comum (vários
- * arquivos, cada um tentando 3x com timeout de rede), mas finito.
+ * Ceiling on how long a job may run. Without this, a job that hangs (a
+ * stuck ffmpeg, or any hang the network timeouts don't cover) stays
+ * `running` for the rest of the process's life: `sweep` skips jobs without
+ * `finishedAt`, so nothing else ever reaches it — the directory is never
+ * freed, listeners never cleaned up, SSE polling forever. Generous enough
+ * for the common worst case (several files, each retrying 3x with a network
+ * timeout), but finite.
  */
 export const RUNNING_CEILING_MS = 60 * 60 * 1000;
 
@@ -43,7 +44,7 @@ export interface JobInput {
 
 export interface ClipState {
   index: number;
-  /** Só o relógio, ex: "20:34:25". */
+  /** Time of day only, e.g. "20:34:25". */
   time: string;
   cameras: 1 | 2;
   url: string;
@@ -62,7 +63,7 @@ export interface JobState {
   merged: { url: string; duration: number } | null;
   failed: Array<{ time: string; error: string }>;
   error: string | null;
-  /** ISO, ou `null` enquanto o job ainda roda. */
+  /** ISO, or `null` while the job is still running. */
   expiresAt: string | null;
 }
 
@@ -76,16 +77,16 @@ export interface Job {
   merged: { path: string; duration: number } | null;
   failed: RenderResult["failed"];
   error: string | null;
-  /** Quando o job começou a rodar — usado pelo teto do `sweep`. */
+  /** When the job started running — used by `sweep`'s ceiling. */
   startedAt: number;
   finishedAt: number | null;
   /**
-   * Memoiza a *promessa* de montagem do zip, não o caminho: duas requisições
-   * concorrentes assim compartilham a mesma montagem em vez de cada uma
-   * escrever por cima do arquivo da outra.
+   * Memoizes the zip build *promise*, not the path: two concurrent requests
+   * this way share the same build instead of each one overwriting the
+   * other's file.
    */
   zipBuild: Promise<string> | null;
-  /** Resolve quando o job termina, com sucesso ou não. */
+  /** Resolves when the job finishes, whether it succeeded or not. */
   done: Promise<void>;
 }
 
@@ -97,8 +98,9 @@ export interface JobStoreOptions {
 }
 
 /**
- * Guarda os jobs em memória. Um restart perde o que estava rodando — por isso o
- * sweeper também roda na inicialização, para não deixar arquivos órfãos.
+ * Keeps jobs in memory. A restart loses whatever was running — which is why
+ * the sweeper also runs on startup, so it doesn't leave orphaned files
+ * behind.
  */
 export class JobStore {
   private readonly jobs = new Map<string, Job>();
@@ -111,10 +113,10 @@ export class JobStore {
   constructor({ root, render, newId, now }: JobStoreOptions) {
     this.root = root;
     this.render = render ?? renderReplays;
-    // 12 hex chars (48 bits): o risco aqui não é adivinhação, é colisão — um
-    // id repetido faria `create` substituir silenciosamente um job vivo, e os
-    // dois passariam a dividir `work/<id>/`, vazando os arquivos de um nas
-    // URLs `/files` do outro. Ainda assim `create` reamostra se colidir.
+    // 12 hex chars (48 bits): the risk here isn't guessing, it's collision —
+    // a repeated id would make `create` silently replace a live job, and the
+    // two would end up sharing `work/<id>/`, leaking one's files through the
+    // other's `/files` URLs. `create` still resamples on collision anyway.
     this.newId = newId ?? (() => crypto.randomUUID().replaceAll("-", "").slice(0, 12));
     this.now = now ?? Date.now;
   }
@@ -141,9 +143,9 @@ export class JobStore {
     };
 
     this.jobs.set(id, job);
-    // Adiado para o próximo microtask: assim quem chama `create` ainda tem a
-    // chance de se inscrever via `subscribe` antes do primeiro aviso de
-    // progresso, mesmo quando `render` é síncrono (como nos testes).
+    // Deferred to the next microtask: this way the caller of `create` still
+    // gets a chance to `subscribe` before the first progress notification,
+    // even when `render` is synchronous (as it is in the tests).
     job.done = Promise.resolve().then(() => this.run(job));
     return job;
   }
@@ -197,14 +199,14 @@ export class JobStore {
     };
   }
 
-  /** Remove os jobs vencidos e seus arquivos. Devolve os ids removidos. */
+  /** Removes expired jobs and their files. Returns the removed ids. */
   async sweep(now: number = this.now()): Promise<string[]> {
-    const removidos: string[] = [];
+    const removed: string[] = [];
 
     for (const [id, job] of this.jobs) {
-      // Preso rodando além do teto: marca como erro para que passe a ter
-      // `finishedAt` e, com isso, entre na contagem normal do TTL numa
-      // passada futura — não é removido nesta mesma passada.
+      // Stuck running past the ceiling: mark it as error so it gains a
+      // `finishedAt` and, with that, enters the normal TTL count on a future
+      // pass — it isn't removed on this same pass.
       if (job.status === "running" && now - job.startedAt > RUNNING_CEILING_MS) {
         job.status = "error";
         job.error = "O job travou e foi encerrado depois de rodar tempo demais.";
@@ -219,15 +221,15 @@ export class JobStore {
         await rm(job.dir, { recursive: true, force: true });
         this.jobs.delete(id);
         this.listeners.delete(id);
-        removidos.push(id);
+        removed.push(id);
       } catch {
-        // Falha na remoção de um job não deve interromper a varredura dos demais.
-        // O job permanece no mapa para ser retentado na próxima passada.
+        // A removal failure for one job shouldn't stop sweeping the rest.
+        // The job stays in the map to be retried on the next pass.
         continue;
       }
     }
 
-    return removidos;
+    return removed;
   }
 
   private notify(job: Job): void {
@@ -239,10 +241,10 @@ export class JobStore {
       try {
         listener(state);
       } catch (error) {
-        // `run()` chama `notify` dentro do seu `finally`, fora de qualquer
-        // catch: um listener mal-comportado que lança derrubaria o processo
-        // inteiro (unhandled rejection) por causa de um efeito colateral de
-        // notificação, não do job em si.
+        // `run()` calls `notify` inside its `finally`, outside any catch: a
+        // misbehaving listener that throws would take down the whole
+        // process (unhandled rejection) over a notification side effect,
+        // not the job itself.
         console.error(`✗ listener do job ${job.id} falhou:`, error);
       }
     }
@@ -270,7 +272,7 @@ export class JobStore {
       job.clips = result.clips;
       job.merged = result.merged;
       job.failed = result.failed;
-      // Sucesso sem nenhum clipe não é sucesso: não há o que entregar.
+      // Success with no clip at all isn't success: there's nothing to deliver.
       job.status = result.clips.length > 0 ? "done" : "error";
       if (job.status === "error") {
         job.error = "Nenhum lance pôde ser gerado.";

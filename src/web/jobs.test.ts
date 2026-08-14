@@ -8,11 +8,11 @@ import { JobStore, RUNNING_CEILING_MS, TTL_MS, type JobState } from "./jobs.ts";
 
 const replay = (timestamp: string): Replay => ({
   timestamp,
-  camera1_url: `https://exemplo/${timestamp}/camera1.mp4`,
-  camera2_url: `https://exemplo/${timestamp}/camera2.mp4`,
+  camera1_url: `https://example/${timestamp}/camera1.mp4`,
+  camera2_url: `https://example/${timestamp}/camera2.mp4`,
 });
 
-const ENTRADA = {
+const INPUT = {
   field: "four-play-3",
   fieldLabel: "Four Play - Quadra 3",
   date: "2026-08-13",
@@ -23,12 +23,12 @@ const ENTRADA = {
 };
 
 let root: string;
-let contador: number;
+let counter: number;
 
-/** Gera ids previsíveis para os testes. */
-const newId = () => `job${contador++}`;
+/** Generates predictable ids for the tests. */
+const newId = () => `job${counter++}`;
 
-const sucesso = async (request: RenderRequest): Promise<RenderResult> => {
+const succeed = async (request: RenderRequest): Promise<RenderResult> => {
   const clip = {
     index: 0,
     timestamp: "2026-08-13T20:34:25",
@@ -42,7 +42,7 @@ const sucesso = async (request: RenderRequest): Promise<RenderResult> => {
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "replaybr-jobs-"));
-  contador = 1;
+  counter = 1;
 });
 
 afterEach(async () => {
@@ -50,28 +50,28 @@ afterEach(async () => {
 });
 
 describe("JobStore.create", () => {
-  test("o job nasce em running e sem prazo de expiração", async () => {
+  test("the job starts running with no expiration deadline", async () => {
     const store = new JobStore({ root, render: () => new Promise<RenderResult>(() => {}), newId, now: () => 0 });
-    const job = store.create(ENTRADA);
+    const job = store.create(INPUT);
 
-    const estado = store.serialize(job);
-    expect(estado.status).toBe("running");
-    expect(estado.expiresAt).toBeNull();
+    const state = store.serialize(job);
+    expect(state.status).toBe("running");
+    expect(state.expiresAt).toBeNull();
   });
 
-  test("ao terminar vira done e ganha prazo de 2h", async () => {
-    const store = new JobStore({ root, render: sucesso, newId, now: () => 1_000 });
-    const job = store.create(ENTRADA);
+  test("once finished it becomes done and gets a 2h deadline", async () => {
+    const store = new JobStore({ root, render: succeed, newId, now: () => 1_000 });
+    const job = store.create(INPUT);
     await job.done;
 
-    const estado = store.serialize(job);
-    expect(estado.status).toBe("done");
-    expect(estado.expiresAt).toBe(new Date(1_000 + TTL_MS).toISOString());
+    const state = store.serialize(job);
+    expect(state.status).toBe("done");
+    expect(state.expiresAt).toBe(new Date(1_000 + TTL_MS).toISOString());
   });
 
-  test("expõe os clipes como URLs servíveis", async () => {
-    const store = new JobStore({ root, render: sucesso, newId, now: () => 0 });
-    const job = store.create(ENTRADA);
+  test("exposes the clips as servable URLs", async () => {
+    const store = new JobStore({ root, render: succeed, newId, now: () => 0 });
+    const job = store.create(INPUT);
     await job.done;
 
     expect(store.serialize(job).clips).toEqual([
@@ -79,49 +79,49 @@ describe("JobStore.create", () => {
     ]);
   });
 
-  test("repassa as opções e a identificação da hora", async () => {
-    const store = new JobStore({ root, render: sucesso, newId, now: () => 0 });
-    const estado = store.serialize(store.create(ENTRADA));
+  test("passes through the options and hour identification", async () => {
+    const store = new JobStore({ root, render: succeed, newId, now: () => 0 });
+    const state = store.serialize(store.create(INPUT));
 
-    expect(estado.field).toBe("four-play-3");
-    expect(estado.fieldLabel).toBe("Four Play - Quadra 3");
-    expect(estado.hour).toBe("20");
-    expect(estado.options).toEqual({ swap: true, concat: false });
+    expect(state.field).toBe("four-play-3");
+    expect(state.fieldLabel).toBe("Four Play - Quadra 3");
+    expect(state.hour).toBe("20");
+    expect(state.options).toEqual({ swap: true, concat: false });
   });
 
-  test("erro na renderização deixa o job em error", async () => {
+  test("a rendering error leaves the job in error", async () => {
     const store = new JobStore({
       root,
       render: async () => { throw new Error("ffmpeg sumiu"); },
       newId,
       now: () => 0,
     });
-    const job = store.create(ENTRADA);
+    const job = store.create(INPUT);
     await job.done;
 
-    const estado = store.serialize(job);
-    expect(estado.status).toBe("error");
-    expect(estado.error).toBe("ffmpeg sumiu");
+    const state = store.serialize(job);
+    expect(state.status).toBe("error");
+    expect(state.error).toBe("ffmpeg sumiu");
   });
 
-  test("nenhum clipe gerado é erro, não sucesso vazio", async () => {
+  test("no clip generated is an error, not an empty success", async () => {
     const store = new JobStore({
       root,
       render: async () => ({
         clips: [],
         merged: null,
-        failed: [{ timestamp: "2026-08-13T20:34:25", error: "rede caiu" }],
+        failed: [{ timestamp: "2026-08-13T20:34:25", error: "network down" }],
       }),
       newId,
       now: () => 0,
     });
-    const job = store.create(ENTRADA);
+    const job = store.create(INPUT);
     await job.done;
 
     expect(store.serialize(job).status).toBe("error");
   });
 
-  test("lances que falharam aparecem no estado sem derrubar o job", async () => {
+  test("plays that failed show up in the state without bringing the job down", async () => {
     const store = new JobStore({
       root,
       render: async (request) => {
@@ -135,96 +135,96 @@ describe("JobStore.create", () => {
         return {
           clips: [clip],
           merged: null,
-          failed: [{ timestamp: "2026-08-13T20:35:39", error: "rede caiu" }],
+          failed: [{ timestamp: "2026-08-13T20:35:39", error: "network down" }],
         };
       },
       newId,
       now: () => 0,
     });
-    const job = store.create(ENTRADA);
+    const job = store.create(INPUT);
     await job.done;
 
-    const estado = store.serialize(job);
-    expect(estado.status).toBe("done");
-    expect(estado.failed).toEqual([{ time: "20:35:39", error: "rede caiu" }]);
+    const state = store.serialize(job);
+    expect(state.status).toBe("done");
+    expect(state.failed).toEqual([{ time: "20:35:39", error: "network down" }]);
   });
 });
 
 describe("JobStore.create — ids", () => {
-  test("o id gerado por padrão tem 12+ caracteres hexadecimais", () => {
-    const store = new JobStore({ root, render: sucesso, now: () => 0 });
-    const job = store.create(ENTRADA);
+  test("the default generated id has 12+ hex characters", () => {
+    const store = new JobStore({ root, render: succeed, now: () => 0 });
+    const job = store.create(INPUT);
 
     expect(job.id).toMatch(/^[0-9a-f]{12,}$/);
   });
 
-  test("reamostra o id quando ele colide com um job já existente", () => {
-    const ids = ["repetido", "repetido", "unico"];
-    let chamadas = 0;
+  test("resamples the id when it collides with an existing job", () => {
+    const ids = ["repeated", "repeated", "unique"];
+    let calls = 0;
     const store = new JobStore({
       root,
-      render: sucesso,
-      newId: () => ids[chamadas++] ?? "sobra",
+      render: succeed,
+      newId: () => ids[calls++] ?? "leftover",
       now: () => 0,
     });
 
-    const job1 = store.create(ENTRADA);
-    expect(job1.id).toBe("repetido");
+    const job1 = store.create(INPUT);
+    expect(job1.id).toBe("repeated");
 
-    // A segunda chamada de newId() repete "repetido": create() precisa
-    // perceber a colisão e pedir outro id em vez de substituir job1 no mapa.
-    const job2 = store.create(ENTRADA);
-    expect(job2.id).toBe("unico");
-    expect(store.get("repetido")).toBe(job1);
-    expect(store.get("unico")).toBe(job2);
+    // The second newId() call repeats "repeated": create() needs to notice
+    // the collision and ask for another id instead of replacing job1 in the map.
+    const job2 = store.create(INPUT);
+    expect(job2.id).toBe("unique");
+    expect(store.get("repeated")).toBe(job1);
+    expect(store.get("unique")).toBe(job2);
   });
 });
 
 describe("JobStore.subscribe", () => {
-  test("notifica a cada progresso e ao terminar", async () => {
-    const store = new JobStore({ root, render: sucesso, newId, now: () => 0 });
-    const job = store.create(ENTRADA);
-    const estados: JobState[] = [];
-    store.subscribe(job.id, (estado) => estados.push(estado));
+  test("notifies on every progress update and when it finishes", async () => {
+    const store = new JobStore({ root, render: succeed, newId, now: () => 0 });
+    const job = store.create(INPUT);
+    const states: JobState[] = [];
+    store.subscribe(job.id, (state) => states.push(state));
     await job.done;
 
-    expect(estados.length).toBeGreaterThanOrEqual(2);
-    expect(estados.at(-1)?.status).toBe("done");
+    expect(states.length).toBeGreaterThanOrEqual(2);
+    expect(states.at(-1)?.status).toBe("done");
   });
 
-  test("cancelar a inscrição para as notificações", async () => {
-    const store = new JobStore({ root, render: sucesso, newId, now: () => 0 });
-    const job = store.create(ENTRADA);
-    const estados: JobState[] = [];
-    const cancelar = store.subscribe(job.id, (estado) => estados.push(estado));
-    cancelar();
+  test("unsubscribing stops the notifications", async () => {
+    const store = new JobStore({ root, render: succeed, newId, now: () => 0 });
+    const job = store.create(INPUT);
+    const states: JobState[] = [];
+    const unsubscribe = store.subscribe(job.id, (state) => states.push(state));
+    unsubscribe();
     await job.done;
 
-    expect(estados).toEqual([]);
+    expect(states).toEqual([]);
   });
 
-  test("um listener que lança não derruba os demais nem o job", async () => {
-    const store = new JobStore({ root, render: sucesso, newId, now: () => 0 });
-    const job = store.create(ENTRADA);
-    const estados: JobState[] = [];
+  test("a listener that throws doesn't bring down the others or the job", async () => {
+    const store = new JobStore({ root, render: succeed, newId, now: () => 0 });
+    const job = store.create(INPUT);
+    const states: JobState[] = [];
 
     store.subscribe(job.id, () => {
-      throw new Error("listener quebrado");
+      throw new Error("broken listener");
     });
-    store.subscribe(job.id, (estado) => estados.push(estado));
+    store.subscribe(job.id, (state) => states.push(state));
 
-    // Se `notify` deixasse a exceção escapar, `job.done` rejeitaria
-    // (unhandled rejection) e este `await` lançaria.
+    // If `notify` let the exception escape, `job.done` would reject
+    // (unhandled rejection) and this `await` would throw.
     await job.done;
 
-    expect(estados.at(-1)?.status).toBe("done");
+    expect(states.at(-1)?.status).toBe("done");
   });
 });
 
 describe("JobStore.sweep", () => {
-  test("remove apenas os jobs vencidos, e apaga o diretório", async () => {
-    const store = new JobStore({ root, render: sucesso, newId, now: () => 0 });
-    const job = store.create(ENTRADA);
+  test("removes only expired jobs, and deletes the directory", async () => {
+    const store = new JobStore({ root, render: succeed, newId, now: () => 0 });
+    const job = store.create(INPUT);
     await job.done;
     await mkdir(job.dir, { recursive: true });
 
@@ -236,74 +236,74 @@ describe("JobStore.sweep", () => {
     expect(await readdir(root)).not.toContain(job.id);
   });
 
-  test("nunca remove um job em andamento", async () => {
+  test("never removes a job in progress", async () => {
     const store = new JobStore({ root, render: () => new Promise<RenderResult>(() => {}), newId, now: () => 0 });
-    const job = store.create(ENTRADA);
+    const job = store.create(INPUT);
 
     expect(await store.sweep(TTL_MS * 10)).toEqual([]);
     expect(store.get(job.id)).toBeDefined();
   });
 
-  test("job preso rodando além do teto vira error, e some numa passada seguinte", async () => {
-    let agora = 0;
+  test("a job stuck running past the ceiling becomes error, and disappears on a later pass", async () => {
+    let currentTime = 0;
     const store = new JobStore({
       root,
       render: () => new Promise<RenderResult>(() => {}),
       newId,
-      now: () => agora,
+      now: () => currentTime,
     });
-    const job = store.create(ENTRADA);
+    const job = store.create(INPUT);
     await mkdir(job.dir, { recursive: true });
 
-    // Ainda dentro do teto: continua rodando.
-    agora = RUNNING_CEILING_MS - 1;
-    expect(await store.sweep(agora)).toEqual([]);
+    // Still within the ceiling: keeps running.
+    currentTime = RUNNING_CEILING_MS - 1;
+    expect(await store.sweep(currentTime)).toEqual([]);
     expect(store.get(job.id)?.status).toBe("running");
 
-    // Passou do teto: vira error, mas ainda não é removido — só ganhou
-    // `finishedAt` agora, e o TTL conta a partir daí.
-    agora = RUNNING_CEILING_MS + 1;
-    expect(await store.sweep(agora)).toEqual([]);
-    const marcado = store.get(job.id);
-    expect(marcado?.status).toBe("error");
-    expect(marcado?.finishedAt).toBe(agora);
-    expect(marcado?.error).toBeTruthy();
+    // Past the ceiling: becomes error, but still isn't removed — it only
+    // just got `finishedAt`, and the TTL counts from there.
+    currentTime = RUNNING_CEILING_MS + 1;
+    expect(await store.sweep(currentTime)).toEqual([]);
+    const marked = store.get(job.id);
+    expect(marked?.status).toBe("error");
+    expect(marked?.finishedAt).toBe(currentTime);
+    expect(marked?.error).toBeTruthy();
 
-    // Só depois do TTL contado a partir da marcação é que o diretório some.
-    agora = RUNNING_CEILING_MS + 1 + TTL_MS + 1;
-    expect(await store.sweep(agora)).toEqual([job.id]);
+    // Only after the TTL counted from the marking does the directory disappear.
+    currentTime = RUNNING_CEILING_MS + 1 + TTL_MS + 1;
+    expect(await store.sweep(currentTime)).toEqual([job.id]);
     expect(store.get(job.id)).toBeUndefined();
   });
 
-  test("continua a varredura mesmo se um job não conseguir ser removido", async () => {
-    const store = new JobStore({ root, render: sucesso, newId, now: () => 0 });
-    const job1 = store.create(ENTRADA);
-    const job2 = store.create({ ...ENTRADA, hour: "21" });
+  test("keeps sweeping even if one job can't be removed", async () => {
+    const store = new JobStore({ root, render: succeed, newId, now: () => 0 });
+    const job1 = store.create(INPUT);
+    const job2 = store.create({ ...INPUT, hour: "21" });
     await job1.done;
     await job2.done;
 
-    // Criar os diretórios para simular jobs completos
+    // Create the directories to simulate completed jobs.
     await mkdir(job1.dir, { recursive: true });
     await mkdir(job2.dir, { recursive: true });
 
-    // Tornar o diretório do primeiro job sem permissões de escrita para forçar falha na remoção
-    // Usar uma permissão que não permite deletar (chmod 000)
+    // Strip write permission from the first job's directory to force the
+    // removal to fail. Use a permission that disallows deletion (chmod 000).
     await chmod(job1.dir, 0o000);
 
     try {
-      // Varrer com tempo além do TTL
-      const removidos = await store.sweep(TTL_MS + 1);
+      // Sweep with time past the TTL.
+      const removed = await store.sweep(TTL_MS + 1);
 
-      // O segundo job deve ter sido removido mesmo que o primeiro falhe
-      expect(removidos).toContain(job2.id);
-      expect(removidos).not.toContain(job1.id);
+      // The second job should be removed even if the first one fails.
+      expect(removed).toContain(job2.id);
+      expect(removed).not.toContain(job1.id);
 
-      // O primeiro job deve continuar no mapa (não foi removido)
+      // The first job should stay in the map (not removed).
       expect(store.get(job1.id)).toBeDefined();
-      // O segundo job foi removido com sucesso
+      // The second job was removed successfully.
       expect(store.get(job2.id)).toBeUndefined();
     } finally {
-      // Limpar: restaurar permissões para que o afterEach consiga deletar
+      // Cleanup: restore permissions so afterEach can delete it.
       await chmod(job1.dir, 0o755);
     }
   });
