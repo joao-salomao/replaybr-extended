@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>replaybr-extended</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>replaybr-extended</h1>
+      <p>Junta as duas câmeras de cada lance num vídeo só.</p>
+    </header>
+
+    <main>
+      <section id="selecao">
+        <div class="linha">
+          <label>
+            Quadra
+            <select id="quadra"></select>
+          </label>
+          <label id="rotulo-slug" hidden>
+            Slug
+            <input id="slug" type="text" placeholder="ex: global-society" />
+          </label>
+        </div>
+        <div class="linha">
+          <label>
+            Data
+            <input id="data" type="date" />
+          </label>
+          <label>
+            Hora
+            <select id="hora" disabled></select>
+          </label>
+        </div>
+        <p id="aviso-selecao" class="aviso" hidden></p>
+      </section>
+
+      <section id="lances" hidden>
+        <div class="cabecalho-lances">
+          <h2>Lances</h2>
+          <label class="todos">
+            <input id="marcar-todos" type="checkbox" checked />
+            marcar todos
+          </label>
+        </div>
+        <ul id="lista-lances"></ul>
+
+        <div class="opcoes">
+          <label id="rotulo-swap" hidden>
+            <input id="swap" type="checkbox" />
+            Inverter câmeras
+          </label>
+          <label>
+            <input id="concat" type="checkbox" />
+            Juntar num vídeo só
+          </label>
+        </div>
+
+        <button id="gerar" type="button">Gerar</button>
+      </section>
+
+      <section id="resultado" hidden>
+        <h2>Resultado</h2>
+        <p id="progresso" class="progresso"></p>
+        <div id="acoes" class="acoes" hidden></div>
+        <p id="expiracao" class="aviso" hidden></p>
+        <ul id="falhas" class="falhas" hidden></ul>
+        <div id="clipes"></div>
+      </section>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

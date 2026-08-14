@@ -1,0 +1,226 @@
+:root {
+  --fundo: #10151a;
+  --painel: #182029;
+  --borda: #26313d;
+  --texto: #e6edf3;
+  --suave: #93a1b0;
+  --destaque: #1f9e57;
+  --erro: #d9534f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Vários seletores abaixo definem `display: grid`/`flex` em elementos que
+   também usam o atributo `hidden` (label, .acoes). Sem isso, o atributo é
+   ignorado: regra de autor sempre vence a folha padrão do navegador. */
+[hidden] {
+  display: none !important;
+}
+
+body {
+  margin: 0;
+  padding: 1rem;
+  background: var(--fundo);
+  color: var(--texto);
+  font: 16px/1.5 system-ui, -apple-system, sans-serif;
+}
+
+header {
+  max-width: 720px;
+  margin: 0 auto 1.5rem;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+header p {
+  margin: 0.25rem 0 0;
+  color: var(--suave);
+  font-size: 0.9rem;
+}
+
+main {
+  max-width: 720px;
+  margin: 0 auto;
+  display: grid;
+  gap: 1.5rem;
+}
+
+section {
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  padding: 1rem;
+}
+
+h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.1rem;
+}
+
+.linha {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+@media (min-width: 560px) {
+  .linha {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+label {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--suave);
+}
+
+select,
+input[type="date"],
+input[type="text"] {
+  width: 100%;
+  padding: 0.6rem;
+  background: var(--fundo);
+  color: var(--texto);
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  font-size: 1rem;
+}
+
+.cabecalho-lances {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.todos {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+#lista-lances {
+  list-style: none;
+  margin: 0.5rem 0;
+  padding: 0;
+  max-height: 22rem;
+  overflow-y: auto;
+}
+
+#lista-lances li {
+  border-bottom: 1px solid var(--borda);
+}
+
+#lista-lances label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.6rem;
+  /* Área de toque grande: o uso provável é o celular. */
+  padding: 0.7rem 0.2rem;
+  color: var(--texto);
+  font-size: 1rem;
+}
+
+input[type="checkbox"] {
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--destaque);
+  flex: none;
+}
+
+.selo {
+  margin-left: auto;
+  color: var(--suave);
+  font-size: 0.8rem;
+}
+
+.opcoes {
+  display: grid;
+  gap: 0.6rem;
+  margin: 1rem 0;
+}
+
+.opcoes label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--texto);
+  font-size: 0.95rem;
+}
+
+button {
+  width: 100%;
+  padding: 0.8rem;
+  background: var(--destaque);
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.progresso {
+  margin: 0 0 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.acoes {
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.acoes a {
+  display: block;
+  padding: 0.7rem;
+  background: var(--fundo);
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  color: var(--texto);
+  text-align: center;
+  text-decoration: none;
+}
+
+.aviso {
+  margin: 0 0 0.5rem;
+  color: var(--suave);
+  font-size: 0.85rem;
+}
+
+.falhas {
+  margin: 0 0 0.75rem;
+  padding-left: 1.2rem;
+  color: var(--erro);
+  font-size: 0.85rem;
+}
+
+.clipe {
+  margin-bottom: 1.25rem;
+}
+
+.clipe h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.clipe video {
+  width: 100%;
+  border-radius: 8px;
+  background: #000;
+}
