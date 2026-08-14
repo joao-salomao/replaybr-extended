@@ -9,22 +9,22 @@ const PORT = Number(process.env.PORT ?? 3000);
 const WORK_DIR = process.env.WORK_DIR ?? "work";
 const SWEEP_INTERVAL_MS = 10 * 60 * 1000;
 
-// Falhar aqui é melhor que falhar no primeiro usuário.
+// Better to fail here than to fail on the first user.
 await assertFfmpegAvailable();
 
-// O estado dos jobs é em memória: o que sobrou de um restart é inalcançável.
-// Limpa o conteúdo em vez de recriar o diretório em si: quando WORK_DIR é o
-// ponto de montagem de um volume (caso do Docker), remover o diretório falha
-// com EBUSY — só o conteúdo pode ser apagado.
+// Job state lives in memory: whatever was running before a restart is
+// unreachable. Clear the contents instead of recreating the directory
+// itself: when WORK_DIR is a Docker volume's mount point, removing the
+// directory fails with EBUSY — only its contents can be wiped.
 await mkdir(WORK_DIR, { recursive: true });
-for (const entrada of await readdir(WORK_DIR)) {
+for (const entry of await readdir(WORK_DIR)) {
   try {
-    await rm(`${WORK_DIR}/${entrada}`, { recursive: true, force: true });
-  } catch (erro) {
-    // Uma entrada que não pode ser removida não deve impedir o boot: o
-    // servidor sobe do mesmo jeito, com esse resto ocupando espaço.
+    await rm(`${WORK_DIR}/${entry}`, { recursive: true, force: true });
+  } catch (error) {
+    // An entry that can't be removed shouldn't block boot: the server
+    // still comes up, just with that leftover taking up space.
     console.warn(
-      `⚠ Não foi possível remover "${entrada}" de ${WORK_DIR}: ${erro instanceof Error ? erro.message : String(erro)}`,
+      `⚠ Não foi possível remover "${entry}" de ${WORK_DIR}: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 }
@@ -32,12 +32,12 @@ for (const entrada of await readdir(WORK_DIR)) {
 const jobs = new JobStore({ root: WORK_DIR });
 
 setInterval(() => {
-  void jobs.sweep().then((removidos) => {
-    if (removidos.length > 0) {
-      console.log(`⌫ ${removidos.length} job(s) expirado(s) removido(s)`);
+  void jobs.sweep().then((removed) => {
+    if (removed.length > 0) {
+      console.log(`⌫ ${removed.length} job(s) expirado(s) removido(s)`);
     }
-  }).catch((erro) => {
-    console.error(`✗ Falha ao varrer jobs expirados: ${erro instanceof Error ? erro.message : String(erro)}`);
+  }).catch((error) => {
+    console.error(`✗ Falha ao varrer jobs expirados: ${error instanceof Error ? error.message : String(error)}`);
   });
 }, SWEEP_INTERVAL_MS);
 

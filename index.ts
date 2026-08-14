@@ -150,8 +150,8 @@ async function main(): Promise<void> {
 
   const group = groups.find((candidate) => candidate.hour === hour);
   if (!group) {
-    const disponiveis = groups.map((g) => g.label).join(", ");
-    fail(`Nenhum replay na hora ${hour}:00. Disponíveis: ${disponiveis}`);
+    const available = groups.map((g) => g.label).join(", ");
+    fail(`Nenhum replay na hora ${hour}:00. Disponíveis: ${available}`);
   }
 
   await assertFfmpegAvailable();
@@ -159,14 +159,14 @@ async function main(): Promise<void> {
   const rawDir = `${args.downloadsDir}/${args.field}/${args.date}/${hour}/raw`;
   const outDir = `${args.outDir}/${args.field}/${args.date}/${hour}`;
 
-  const comDuas = group.replays.filter((replay) => replay.camera2_url).length;
-  const arquivos = group.replays.length + comDuas;
+  const withTwo = group.replays.filter((replay) => replay.camera2_url).length;
+  const files = group.replays.length + withTwo;
 
   console.log(
-    `\n→ ${group.replays.length} replay(s) na hora ${group.label}. Baixando ${arquivos} arquivos...`,
+    `\n→ ${group.replays.length} replay(s) na hora ${group.label}. Baixando ${files} arquivos...`,
   );
-  if (comDuas < group.replays.length) {
-    console.log(`  ${group.replays.length - comDuas} lance(s) com uma câmera só.`);
+  if (withTwo < group.replays.length) {
+    console.log(`  ${group.replays.length - withTwo} lance(s) com uma câmera só.`);
   }
 
   const result = await renderReplays({
@@ -200,8 +200,8 @@ async function main(): Promise<void> {
   console.log(`\n✓ ${result.clips.length} vídeo(s) em ${outDir}/`);
   console.log(`  ${layout}`);
 
-  for (const falha of result.failed) {
-    console.error(`  ✗ ${falha.timestamp}: ${falha.error}`);
+  for (const failure of result.failed) {
+    console.error(`  ✗ ${failure.timestamp}: ${failure.error}`);
   }
 
   if (result.merged) {
