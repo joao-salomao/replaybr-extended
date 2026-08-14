@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import JSZip from "jszip";
 import { ReplayBrUnavailableError, type Replay } from "../api.ts";
 import type { RenderRequest, RenderResult } from "../render.ts";
 import { JobStore } from "./jobs.ts";
@@ -435,13 +436,9 @@ describe("GET /api/jobs/:id/zip", () => {
     expect(bytes1).toEqual(bytes2);
     expect(bytes1.length).toBeGreaterThan(0);
 
-    const file = join(root, "verificacao.zip");
-    await Bun.write(file, bytes1);
-    const proc = Bun.spawn(["unzip", "-t", file], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    expect(await proc.exited).toBe(0);
+    // `checkCRC32: true` makes loadAsync throw if any entry's CRC doesn't
+    // match its decompressed content — the closest JSZip equivalent of `unzip -t`.
+    await expect(JSZip.loadAsync(bytes1, { checkCRC32: true })).resolves.toBeDefined();
   });
 });
 
