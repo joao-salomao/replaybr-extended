@@ -1,0 +1,14 @@
+services:
+  web:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      WORK_DIR: /app/work
+    volumes:
+      - work:/app/work
+    restart: unless-stopped
+
+volumes:
+  work:

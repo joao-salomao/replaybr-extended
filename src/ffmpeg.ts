@@ -1,18 +1,14 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-
-export interface Dimensions {
-  width: number;
-  height: number;
-}
+import type { Dimensions } from "./mp4.ts";
 
 export interface RenderClipOptions {
-  /** Uma ou duas câmeras do mesmo lance. */
+  /** One or two cameras of the same play. */
   sources: string[];
   output: string;
-  /** Tamanho de cada câmera dentro do quadro. */
+  /** Size of each camera within the frame. */
   cell: Dimensions;
-  /** Colunas do quadro final: 2 quando o horário tem alguma segunda câmera. */
+  /** Columns of the final frame: 2 when the hour has any second camera. */
   columns: number;
   fps: number;
   crf: number;
@@ -34,41 +30,22 @@ async function run(bin: string, args: string[]): Promise<string> {
 }
 
 export async function assertFfmpegAvailable(): Promise<void> {
-  for (const bin of ["ffmpeg", "ffprobe"]) {
-    try {
-      await run(bin, ["-version"]);
-    } catch {
-      throw new Error(
-        `\`${bin}\` não encontrado no PATH. Instale com: brew install ffmpeg`,
-      );
-    }
+  try {
+    await run("ffmpeg", ["-version"]);
+  } catch {
+    throw new Error(
+      "`ffmpeg` não encontrado no PATH. Instale com: brew install ffmpeg",
+    );
   }
-}
-
-/** Lê largura e altura do vídeo, usadas para normalizar todos os clipes. */
-export async function probeDimensions(file: string): Promise<Dimensions> {
-  const out = await run("ffprobe", [
-    "-v", "error",
-    "-select_streams", "v:0",
-    "-show_entries", "stream=width,height",
-    "-of", "csv=p=0:s=x",
-    file,
-  ]);
-
-  const [width, height] = out.split("x").map(Number);
-  if (!width || !height) {
-    throw new Error(`Não foi possível ler as dimensões de ${file}`);
-  }
-  return { width, height };
 }
 
 /**
- * Renderiza um lance. Com duas câmeras, elas vão lado a lado; com uma só, ela
- * fica centralizada no quadro (que continua com `columns` colunas).
+ * Renders a play. With two cameras, they go side by side; with just one, it
+ * stays centered in the frame (which keeps `columns` columns).
  *
- * Cada câmera é escalada para o mesmo tamanho preservando o aspecto, e todos os
- * clipes de um horário saem com dimensões idênticas — pré-requisito do concat
- * sem recodificar.
+ * Each camera is scaled to the same size while preserving aspect ratio, and
+ * every clip in an hour comes out with identical dimensions — a prerequisite
+ * for concatenating without re-encoding.
  */
 export async function renderClip({
   sources,
@@ -93,7 +70,7 @@ export async function renderClip({
   if (sources.length >= 2) {
     steps.push(`[c0][c1]hstack=inputs=2[v]`);
   } else if (frameWidth !== cell.width) {
-    // Câmera única num quadro de duas colunas: centraliza e preenche o resto.
+    // Single camera on a two-column frame: center it and pad the rest.
     steps.push(`[c0]pad=${frameWidth}:${cell.height}:(ow-iw)/2:0[v]`);
   } else {
     steps.push(`[c0]null[v]`);
@@ -115,15 +92,15 @@ export async function renderClip({
   return output;
 }
 
-/** Concatena clipes já normalizados, sem recodificar. */
+/** Concatenates already-normalized clips, without re-encoding. */
 export async function concatClips(
   clips: string[],
   output: string,
   workDir: string,
 ): Promise<string> {
   const listFile = `${workDir}/concat.txt`;
-  // O concat demuxer resolve caminhos relativos à pasta do arquivo de lista,
-  // então os clipes precisam entrar como caminhos absolutos.
+  // The concat demuxer resolves relative paths against the list file's
+  // folder, so the clips need to go in as absolute paths.
   const body = clips
     .map((clip) => `file '${resolve(clip).replaceAll("'", "'\\''")}'`)
     .join("\n");
@@ -140,14 +117,4 @@ export async function concatClips(
     output,
   ]);
   return output;
-}
-
-export async function probeDuration(file: string): Promise<number> {
-  const out = await run("ffprobe", [
-    "-v", "error",
-    "-show_entries", "format=duration",
-    "-of", "csv=p=0",
-    file,
-  ]);
-  return Number(out);
 }

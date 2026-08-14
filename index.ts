@@ -1,14 +1,12 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
-import { fetchReplaysForDate, groupReplaysIntoSlots } from "./src/api.ts";
-import { downloadReplayPairs } from "./src/download.ts";
 import {
-  assertFfmpegAvailable,
-  concatClips,
-  probeDimensions,
-  probeDuration,
-  renderClip,
-} from "./src/ffmpeg.ts";
+  fetchReplaysForDate,
+  groupReplaysByHour,
+  normalizeHour,
+} from "./src/api.ts";
+import { assertFfmpegAvailable } from "./src/ffmpeg.ts";
+import { renderReplays } from "./src/render.ts";
 
 const DEFAULTS = {
   field: "placar-society",
@@ -37,21 +35,21 @@ interface CliArgs {
 }
 
 const USAGE = `
-download-replay — baixa replays do ReplayBR e junta as duas câmeras lado a lado
+replaybr-extended — baixa replays do ReplayBR e junta as duas câmeras lado a lado
 
 Gera um vídeo por lance (câmera 1 | câmera 2 tocando ao mesmo tempo).
 
 Uso:
   bun run index.ts <data> <hora> [opções]
-  bun run index.ts --date 2026-07-29 --time 20:30
+  bun run index.ts --date 2026-07-29 --time 20
 
 Argumentos:
   <data>   YYYY-MM-DD
-  <hora>   HH:MM — o slot de 30min exibido no site (ex: 20:30)
+  <hora>   a hora exibida no site (ex: 20 ou 20:00)
 
 Opções:
-  -f, --field <slug>     campo (padrão: ${DEFAULTS.field})
-  -l, --list             lista os horários disponíveis na data e sai
+  -f, --field <slug>     quadra (padrão: ${DEFAULTS.field})
+  -l, --list             lista as horas disponíveis na data e sai
   -c, --concat           além dos individuais, gera também um vídeo com todos
   -s, --swap             inverte a ordem das câmeras (câmera 2 | câmera 1)
   -o, --out-dir <dir>    diretório de saída (padrão: ${DEFAULTS.outDir})
@@ -64,10 +62,10 @@ Opções:
 
 Exemplos:
   bun run index.ts 2026-07-29 --list
-  bun run index.ts 2026-07-29 20:30
-  bun run index.ts 2026-07-29 20:30 --concat
-  bun run index.ts 2026-07-29 22:30 --field global-society
-  bun run index.ts 2026-07-29 20:30 --field four-play-2 --swap
+  bun run index.ts 2026-07-29 20
+  bun run index.ts 2026-07-29 20 --concat
+  bun run index.ts 2026-07-29 22 --field global-society
+  bun run index.ts 2026-07-29 20 --field four-play-2 --swap
 `.trim();
 
 function fail(message: string): never {
@@ -113,21 +111,6 @@ function parseCliArgs(argv: string[]): CliArgs {
   };
 }
 
-/** Aceita "20:30", "2030" ou "20h30" e normaliza para "HH:MM". */
-function normalizeTime(input: string): string | null {
-  const match = input.match(/^(\d{1,2})[:h.]?(\d{2})$/);
-  if (!match?.[1] || !match[2]) return null;
-
-  const hour = Number(match[1]);
-  const minute = Number(match[2]);
-  if (hour > 23 || minute > 59) return null;
-
-  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
-}
-
-const formatBytes = (bytes: number): string =>
-  `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-
 async function main(): Promise<void> {
   const args = parseCliArgs(process.argv.slice(2));
 
@@ -147,130 +130,85 @@ async function main(): Promise<void> {
     fail(`Nenhum replay encontrado para "${args.field}" em ${args.date}.`);
   }
 
-  const { slots, keys } = groupReplaysIntoSlots(replays);
-  console.log(`  ${replays.length} replays em ${keys.length} horários.`);
+  const groups = groupReplaysByHour(replays);
+  console.log(`  ${replays.length} replays em ${groups.length} horas.`);
 
   if (args.list || !args.time) {
-    console.log("\nHorários disponíveis:");
-    for (const key of keys) {
-      console.log(`  ${key}  —  ${slots[key]?.length ?? 0} replay(s)`);
+    console.log("\nHoras disponíveis:");
+    for (const group of groups) {
+      console.log(`  ${group.label}  —  ${group.replays.length} replay(s)`);
     }
     if (!args.list) {
-      console.log("\nInforme um horário para gerar o vídeo. Ex:");
-      console.log(`  bun run index.ts ${args.date} ${keys.at(-1) ?? "20:30"}`);
+      console.log("\nInforme uma hora para gerar o vídeo. Ex:");
+      console.log(`  bun run index.ts ${args.date} ${groups.at(-1)?.hour ?? "20"}`);
     }
     return;
   }
 
-  const time = normalizeTime(args.time);
-  if (!time) fail(`Horário inválido: "${args.time}". Use HH:MM (ex: 20:30).`);
+  const hour = normalizeHour(args.time);
+  if (!hour) fail(`Horário inválido: "${args.time}". Use a hora (ex: 20).`);
 
-  const selected = slots[time];
-  if (!selected?.length) {
-    fail(`Nenhum replay no horário ${time}. Disponíveis: ${keys.join(", ")}`);
+  const group = groups.find((candidate) => candidate.hour === hour);
+  if (!group) {
+    const available = groups.map((g) => g.label).join(", ");
+    fail(`Nenhum replay na hora ${hour}:00. Disponíveis: ${available}`);
   }
 
   await assertFfmpegAvailable();
 
-  const slotLabel = time.replace(":", "-");
-  const slotDir = `${args.downloadsDir}/${args.field}/${args.date}/${slotLabel}`;
-  const rawDir = `${slotDir}/raw`;
-  const outSlotDir = `${args.outDir}/${args.field}/${args.date}/${slotLabel}`;
+  const rawDir = `${args.downloadsDir}/${args.field}/${args.date}/${hour}/raw`;
+  const outDir = `${args.outDir}/${args.field}/${args.date}/${hour}`;
 
-  // A segunda câmera varia por lance. Se algum lance do horário tiver duas, o
-  // quadro é duplo e os de câmera única ficam centralizados — assim todos os
-  // clipes saem com o mesmo tamanho e o concat sem recodificar continua válido.
-  const withTwoCameras = selected.filter((replay) => replay.camera2_url).length;
-  const columns = withTwoCameras > 0 ? 2 : 1;
-  const fileCount = selected.length + withTwoCameras;
+  const withTwo = group.replays.filter((replay) => replay.camera2_url).length;
+  const files = group.replays.length + withTwo;
 
   console.log(
-    `\n→ ${selected.length} replay(s) no horário ${time}. Baixando ${fileCount} arquivos...`,
+    `\n→ ${group.replays.length} replay(s) na hora ${group.label}. Baixando ${files} arquivos...`,
   );
-  if (withTwoCameras < selected.length) {
-    const singles = selected.length - withTwoCameras;
-    console.log(`  ${singles} lance(s) com uma câmera só.`);
+  if (withTwo < group.replays.length) {
+    console.log(`  ${group.replays.length - withTwo} lance(s) com uma câmera só.`);
   }
 
-  const pairs = await downloadReplayPairs(selected, rawDir, {
+  const result = await renderReplays({
+    replays: group.replays,
+    rawDir,
+    outDir,
+    swap: args.swap,
+    concat: args.concat,
+    fps: args.fps,
+    crf: args.crf,
+    preset: args.preset,
     concurrency: args.concurrency,
-    onProgress: ({ done, total, job, skipped, bytes }) => {
-      const tag = skipped ? "cache" : formatBytes(bytes);
-      const label = `${job.replay.timestamp.slice(11)} cam${job.camera}`;
-      console.log(`  [${String(done).padStart(2)}/${total}] ${label}  (${tag})`);
+    onProgress: ({ phase, done, total }) => {
+      if (phase === "download") {
+        process.stdout.write(`\r  Baixando ${done}/${total}   `);
+      }
+    },
+    onClip: (clip) => {
+      const tag = clip.cameras === 1 ? "  (1 câmera)" : "";
+      console.log(`\r  ✓ ${clip.path}${tag}`);
     },
   });
 
-  const first = pairs[0]?.cameras[0];
-  if (!first) fail("Nenhum vídeo foi baixado.");
-
-  const cell = await probeDimensions(first);
-  const frameWidth = cell.width * columns;
-  console.log(
-    columns === 2
-      ? `\n→ Juntando lado a lado (${cell.width}x${cell.height} → ${frameWidth}x${cell.height})...`
-      : `\n→ Renderizando câmera única (${frameWidth}x${cell.height})...`,
-  );
-
-  const clips: string[] = [];
-  const durations: number[] = [];
-  for (const pair of pairs) {
-    // Um arquivo por lance, nomeado pelo horário em que ele aconteceu.
-    const index = String(pair.index + 1).padStart(2, "0");
-    const clock = pair.timestamp.slice(11).replaceAll(":", "-");
-    const output = `${outSlotDir}/${index}_${clock}.mp4`;
-
-    // A numeração das câmeras nem sempre corresponde à ordem física em campo,
-    // então `--swap` troca os lados. Com uma câmera só, não muda nada.
-    const sources = args.swap ? [...pair.cameras].reverse() : pair.cameras;
-
-    await renderClip({
-      sources,
-      output,
-      cell,
-      columns,
-      fps: args.fps,
-      crf: args.crf,
-      preset: args.preset,
-    });
-    clips.push(output);
-    durations.push(await probeDuration(output));
-
-    const tag = pair.cameras.length === 1 ? "  (1 câmera)" : "";
-    console.log(
-      `  [${String(clips.length).padStart(2)}/${pairs.length}] ${output}${tag}`,
-    );
-  }
-
-  // A duração varia bastante entre campos (de ~3s a ~30s), então é medida.
-  const shortest = Math.min(...durations);
-  const longest = Math.max(...durations);
-  const each =
-    longest - shortest < 1
-      ? `${longest.toFixed(1)}s cada`
-      : `${shortest.toFixed(1)}–${longest.toFixed(1)}s cada`;
   const layout =
-    columns === 2
+    result.clips.some((clip) => clip.cameras === 2)
       ? args.swap
         ? "câmera 2 | câmera 1"
         : "câmera 1 | câmera 2"
       : "câmera 1";
 
-  console.log(`\n✓ ${clips.length} vídeo(s) em ${outSlotDir}/`);
-  console.log(`  ${frameWidth}x${cell.height} · ${each} · ${layout}`);
+  console.log(`\n✓ ${result.clips.length} vídeo(s) em ${outDir}/`);
+  console.log(`  ${layout}`);
 
-  if (args.concat) {
-    const finalPath = `${outSlotDir}/completo.mp4`;
-    console.log(`\n→ Concatenando ${clips.length} clipes...`);
-    await concatClips(clips, finalPath, slotDir);
-
-    const duration = await probeDuration(finalPath);
-    console.log(
-      `✓ ${finalPath} · ${duration.toFixed(1)}s · ${formatBytes(Bun.file(finalPath).size)}`,
-    );
+  for (const failure of result.failed) {
+    console.error(`  ✗ ${failure.timestamp}: ${failure.error}`);
   }
 
-  console.log(`  Brutos mantidos em: ${rawDir}`);
+  if (result.merged) {
+    console.log(
+      `✓ ${result.merged.path} · ${result.merged.duration.toFixed(1)}s`,
+    );
+  }
 }
 
 main().catch((error: unknown) => {
