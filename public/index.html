@@ -13,42 +13,42 @@
     </header>
 
     <main>
-      <section id="selecao">
-        <div class="linha">
+      <section id="selection">
+        <div class="row">
           <label>
             Quadra
-            <select id="quadra"></select>
+            <select id="field"></select>
           </label>
-          <label id="rotulo-slug" hidden>
+          <label id="slug-label" hidden>
             Slug
             <input id="slug" type="text" placeholder="ex: global-society" />
           </label>
         </div>
-        <div class="linha">
+        <div class="row">
           <label>
             Data
-            <input id="data" type="date" />
+            <input id="date" type="date" />
           </label>
           <label>
             Hora
-            <select id="hora" disabled></select>
+            <select id="hour" disabled></select>
           </label>
         </div>
-        <p id="aviso-selecao" class="aviso" hidden></p>
+        <p id="selection-notice" class="notice" hidden></p>
       </section>
 
-      <section id="lances" hidden>
-        <div class="cabecalho-lances">
+      <section id="plays" hidden>
+        <div class="plays-header">
           <h2>Lances</h2>
-          <label class="todos">
-            <input id="marcar-todos" type="checkbox" checked />
+          <label class="select-all">
+            <input id="check-all" type="checkbox" checked />
             marcar todos
           </label>
         </div>
-        <ul id="lista-lances"></ul>
+        <ul id="play-list"></ul>
 
-        <div class="opcoes">
-          <label id="rotulo-swap" hidden>
+        <div class="options">
+          <label id="swap-label" hidden>
             <input id="swap" type="checkbox" />
             Inverter câmeras
           </label>
@@ -58,16 +58,16 @@
           </label>
         </div>
 
-        <button id="gerar" type="button">Gerar</button>
+        <button id="generate" type="button">Gerar</button>
       </section>
 
-      <section id="resultado" hidden>
+      <section id="result" hidden>
         <h2>Resultado</h2>
-        <p id="progresso" class="progresso" aria-live="polite"></p>
-        <div id="acoes" class="acoes" hidden></div>
-        <p id="expiracao" class="aviso" hidden></p>
-        <ul id="falhas" class="falhas" hidden></ul>
-        <div id="clipes"></div>
+        <p id="progress" class="progress" aria-live="polite"></p>
+        <div id="actions" class="actions" hidden></div>
+        <p id="expiration" class="notice" hidden></p>
+        <ul id="failures" class="failures" hidden></ul>
+        <div id="clips"></div>
       </section>
     </main>
 

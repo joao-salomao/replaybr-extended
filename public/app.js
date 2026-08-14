@@ -1,317 +1,317 @@
 const $ = (id) => document.getElementById(id);
 
 const el = {
-  quadra: $("quadra"),
-  rotuloSlug: $("rotulo-slug"),
+  field: $("field"),
+  slugLabel: $("slug-label"),
   slug: $("slug"),
-  data: $("data"),
-  hora: $("hora"),
-  avisoSelecao: $("aviso-selecao"),
-  lances: $("lances"),
-  listaLances: $("lista-lances"),
-  marcarTodos: $("marcar-todos"),
-  rotuloSwap: $("rotulo-swap"),
+  date: $("date"),
+  hour: $("hour"),
+  selectionNotice: $("selection-notice"),
+  plays: $("plays"),
+  playList: $("play-list"),
+  checkAll: $("check-all"),
+  swapLabel: $("swap-label"),
   swap: $("swap"),
   concat: $("concat"),
-  gerar: $("gerar"),
-  resultado: $("resultado"),
-  progresso: $("progresso"),
-  acoes: $("acoes"),
-  expiracao: $("expiracao"),
-  falhas: $("falhas"),
-  clipes: $("clipes"),
+  generate: $("generate"),
+  result: $("result"),
+  progress: $("progress"),
+  actions: $("actions"),
+  expiration: $("expiration"),
+  failures: $("failures"),
+  clips: $("clips"),
 };
 
-const OUTRA = "__outra__";
-let quadras = [];
-let horas = [];
-let fonte = null;
+const OTHER = "__other__";
+let fields = [];
+let hours = [];
+let source = null;
 
-const slugAtual = () =>
-  el.quadra.value === OUTRA ? el.slug.value.trim() : el.quadra.value;
+const currentSlug = () =>
+  el.field.value === OTHER ? el.slug.value.trim() : el.field.value;
 
-const aviso = (mensagem) => {
-  el.avisoSelecao.textContent = mensagem;
-  el.avisoSelecao.hidden = !mensagem;
+const notice = (message) => {
+  el.selectionNotice.textContent = message;
+  el.selectionNotice.hidden = !message;
 };
 
-async function pegarJSON(url, options) {
+async function fetchJSON(url, options) {
   const res = await fetch(url, options);
-  const corpo = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(corpo.error ?? `Erro ${res.status}`);
-  return corpo;
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error ?? `Erro ${res.status}`);
+  return body;
 }
 
-async function carregarQuadras() {
-  quadras = await pegarJSON("/api/fields");
+async function loadFields() {
+  fields = await fetchJSON("/api/fields");
 
-  for (const quadra of quadras) {
-    el.quadra.append(new Option(quadra.label, quadra.slug));
+  for (const field of fields) {
+    el.field.append(new Option(field.label, field.slug));
   }
-  el.quadra.append(new Option("Outra quadra…", OUTRA));
-  el.data.value = new Date().toISOString().slice(0, 10);
+  el.field.append(new Option("Outra quadra…", OTHER));
+  el.date.value = new Date().toISOString().slice(0, 10);
 }
 
-function aplicarSwapPadrao() {
-  const quadra = quadras.find((q) => q.slug === slugAtual());
-  el.swap.checked = quadra?.defaultSwap ?? false;
+function applyDefaultSwap() {
+  const field = fields.find((f) => f.slug === currentSlug());
+  el.swap.checked = field?.defaultSwap ?? false;
 }
 
-async function carregarDia() {
-  const field = slugAtual();
-  if (!field || !el.data.value) return;
+async function loadDay() {
+  const field = currentSlug();
+  if (!field || !el.date.value) return;
 
-  el.hora.innerHTML = "";
-  el.hora.disabled = true;
-  el.lances.hidden = true;
-  aviso("Buscando…");
+  el.hour.innerHTML = "";
+  el.hour.disabled = true;
+  el.plays.hidden = true;
+  notice("Buscando…");
 
   try {
-    const dia = await pegarJSON(
-      `/api/replays?field=${encodeURIComponent(field)}&date=${el.data.value}`,
+    const day = await fetchJSON(
+      `/api/replays?field=${encodeURIComponent(field)}&date=${el.date.value}`,
     );
-    horas = dia.hours;
+    hours = day.hours;
 
-    if (horas.length === 0) {
-      aviso("Nenhum replay nessa data.");
+    if (hours.length === 0) {
+      notice("Nenhum replay nessa data.");
       return;
     }
 
-    for (const hora of horas) {
-      el.hora.append(new Option(`${hora.label} — ${hora.replays.length} lance(s)`, hora.hour));
+    for (const hour of hours) {
+      el.hour.append(new Option(`${hour.label} — ${hour.replays.length} lance(s)`, hour.hour));
     }
-    el.hora.disabled = false;
-    aviso("");
-    mostrarLances();
-  } catch (erro) {
-    aviso(erro.message);
+    el.hour.disabled = false;
+    notice("");
+    showPlays();
+  } catch (error) {
+    notice(error.message);
   }
 }
 
-function mostrarLances() {
-  const hora = horas.find((h) => h.hour === el.hora.value);
-  if (!hora) return;
+function showPlays() {
+  const hour = hours.find((h) => h.hour === el.hour.value);
+  if (!hour) return;
 
-  el.listaLances.innerHTML = "";
-  for (const lance of hora.replays) {
+  el.playList.innerHTML = "";
+  for (const play of hour.replays) {
     const li = document.createElement("li");
     const label = document.createElement("label");
 
-    const caixa = document.createElement("input");
-    caixa.type = "checkbox";
-    caixa.checked = true;
-    caixa.value = lance.timestamp;
-    caixa.addEventListener("change", atualizarBotao);
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = true;
+    checkbox.value = play.timestamp;
+    checkbox.addEventListener("change", updateButton);
 
-    const texto = document.createElement("span");
-    texto.textContent = lance.time;
+    const text = document.createElement("span");
+    text.textContent = play.time;
 
-    const selo = document.createElement("span");
-    selo.className = "selo";
-    selo.textContent = lance.cameras === 2 ? "2 câmeras" : "1 câmera";
+    const badge = document.createElement("span");
+    badge.className = "badge";
+    badge.textContent = play.cameras === 2 ? "2 câmeras" : "1 câmera";
 
-    label.append(caixa, texto, selo);
+    label.append(checkbox, text, badge);
     li.append(label);
-    el.listaLances.append(li);
+    el.playList.append(li);
   }
 
-  // Com uma câmera só o swap não faz diferença; um controle inerte só confunde.
-  el.rotuloSwap.hidden = !hora.anyTwoCameras;
-  aplicarSwapPadrao();
-  el.marcarTodos.checked = true;
-  el.lances.hidden = false;
-  atualizarBotao();
+  // With only one camera the swap makes no difference; a dead control just confuses.
+  el.swapLabel.hidden = !hour.anyTwoCameras;
+  applyDefaultSwap();
+  el.checkAll.checked = true;
+  el.plays.hidden = false;
+  updateButton();
 }
 
-const selecionados = () =>
-  [...el.listaLances.querySelectorAll("input:checked")].map((c) => c.value);
+const selectedTimestamps = () =>
+  [...el.playList.querySelectorAll("input:checked")].map((c) => c.value);
 
-function atualizarBotao() {
-  const hora = horas.find((h) => h.hour === el.hora.value);
-  const escolhidos = selecionados();
-  const arquivos = hora
-    ? hora.replays.filter((r) => escolhidos.includes(r.timestamp))
-        .reduce((soma, r) => soma + r.cameras, 0)
+function updateButton() {
+  const hour = hours.find((h) => h.hour === el.hour.value);
+  const chosen = selectedTimestamps();
+  const fileCount = hour
+    ? hour.replays.filter((r) => chosen.includes(r.timestamp))
+        .reduce((sum, r) => sum + r.cameras, 0)
     : 0;
 
-  el.gerar.disabled = escolhidos.length === 0;
-  el.gerar.textContent =
-    escolhidos.length === 0
+  el.generate.disabled = chosen.length === 0;
+  el.generate.textContent =
+    chosen.length === 0
       ? "Selecione ao menos um lance"
-      : `Gerar · ${escolhidos.length} lance(s) · ${arquivos} arquivo(s) para baixar`;
+      : `Gerar · ${chosen.length} lance(s) · ${fileCount} arquivo(s) para baixar`;
 }
 
-async function gerar() {
-  el.gerar.disabled = true;
+async function generate() {
+  el.generate.disabled = true;
 
   try {
-    const { jobId } = await pegarJSON("/api/jobs", {
+    const { jobId } = await fetchJSON("/api/jobs", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        field: slugAtual(),
-        date: el.data.value,
-        hour: el.hora.value,
-        replays: selecionados(),
+        field: currentSlug(),
+        date: el.date.value,
+        hour: el.hour.value,
+        replays: selectedTimestamps(),
         swap: el.swap.checked,
         concat: el.concat.checked,
       }),
     });
 
     history.pushState({}, "", `/j/${jobId}`);
-    acompanhar(jobId);
-  } catch (erro) {
-    aviso(erro.message);
-    el.gerar.disabled = false;
+    track(jobId);
+  } catch (error) {
+    notice(error.message);
+    el.generate.disabled = false;
   }
 }
 
-function acompanhar(jobId) {
-  el.resultado.hidden = false;
-  el.progresso.textContent = "Preparando…";
-  el.clipes.innerHTML = "";
-  el.acoes.hidden = true;
-  el.expiracao.hidden = true;
-  el.falhas.hidden = true;
+function track(jobId) {
+  el.result.hidden = false;
+  el.progress.textContent = "Preparando…";
+  el.clips.innerHTML = "";
+  el.actions.hidden = true;
+  el.expiration.hidden = true;
+  el.failures.hidden = true;
 
-  fonte?.close();
-  fonte = new EventSource(`/api/jobs/${jobId}/events`);
-  fonte.onmessage = (evento) => desenhar(jobId, JSON.parse(evento.data));
-  fonte.onerror = () => void verificarJobAindaExiste(jobId);
+  source?.close();
+  source = new EventSource(`/api/jobs/${jobId}/events`);
+  source.onmessage = (event) => renderState(jobId, JSON.parse(event.data));
+  source.onerror = () => void checkJobStillExists(jobId);
 }
 
-// EventSource já reconecta sozinho depois de um erro — fechar a conexão aqui
-// jogaria fora esse reconnect embutido por causa de um blip passageiro, e o
-// job pode continuar rodando normalmente do outro lado. Só interrompemos de
-// verdade quando o job realmente sumiu (expirou, ou o servidor reiniciou e
-// perdeu o work dir).
-let verificandoJob = false;
-async function verificarJobAindaExiste(jobId) {
-  if (verificandoJob) return;
-  verificandoJob = true;
+// EventSource already reconnects on its own after an error — closing the
+// connection here would throw away that built-in reconnect over a passing
+// blip, and the job may well still be running fine on the other end. We only
+// actually stop when the job is truly gone (expired, or the server restarted
+// and lost the work dir).
+let checkingJob = false;
+async function checkJobStillExists(jobId) {
+  if (checkingJob) return;
+  checkingJob = true;
 
   try {
     const res = await fetch(`/api/jobs/${jobId}`);
     if (res.status !== 404) return;
 
-    const corpo = await res.json().catch(() => ({}));
-    fonte?.close();
+    const body = await res.json().catch(() => ({}));
+    source?.close();
 
-    el.progresso.textContent = "";
-    const texto = document.createElement("span");
-    texto.textContent = corpo.error ?? "Esse link expirou.";
+    el.progress.textContent = "";
+    const text = document.createElement("span");
+    text.textContent = body.error ?? "Esse link expirou.";
     const link = document.createElement("a");
     link.href = "/";
     link.textContent = "Voltar ao início";
-    el.progresso.append(texto, document.createElement("br"), link);
+    el.progress.append(text, document.createElement("br"), link);
   } catch {
-    // Falha ao checar: deixa o EventSource seguir tentando reconectar sozinho.
+    // Check failed: let the EventSource keep trying to reconnect on its own.
   } finally {
-    verificandoJob = false;
+    checkingJob = false;
   }
 }
 
-const FASES = { download: "Baixando", render: "Renderizando", concat: "Juntando" };
+const PHASES = { download: "Baixando", render: "Renderizando", concat: "Juntando" };
 
-function desenhar(jobId, estado) {
-  if (estado.status === "running") {
-    el.progresso.textContent = estado.progress
-      ? `${FASES[estado.progress.phase]} ${estado.progress.done}/${estado.progress.total}`
+function renderState(jobId, state) {
+  if (state.status === "running") {
+    el.progress.textContent = state.progress
+      ? `${PHASES[state.progress.phase]} ${state.progress.done}/${state.progress.total}`
       : "Preparando…";
-  } else if (estado.status === "error") {
-    el.progresso.textContent = `Falhou: ${estado.error}`;
+  } else if (state.status === "error") {
+    el.progress.textContent = `Falhou: ${state.error}`;
   } else {
-    el.progresso.textContent = `Pronto — ${estado.clips.length} vídeo(s).`;
+    el.progress.textContent = `Pronto — ${state.clips.length} vídeo(s).`;
   }
 
-  for (const clipe of estado.clips) {
-    if (document.getElementById(`clipe-${clipe.index}`)) continue;
+  for (const clip of state.clips) {
+    if (document.getElementById(`clip-${clip.index}`)) continue;
 
-    const bloco = document.createElement("div");
-    bloco.className = "clipe";
-    bloco.id = `clipe-${clipe.index}`;
+    const wrapper = document.createElement("div");
+    wrapper.className = "clip";
+    wrapper.id = `clip-${clip.index}`;
 
-    const titulo = document.createElement("h3");
-    titulo.textContent = clipe.time;
+    const title = document.createElement("h3");
+    title.textContent = clip.time;
 
     const video = document.createElement("video");
     video.controls = true;
     video.preload = "none";
-    video.src = clipe.url;
+    video.src = clip.url;
 
-    const baixar = document.createElement("a");
-    baixar.href = `${clipe.url}?download=1`;
-    baixar.textContent = "Baixar";
+    const downloadLink = document.createElement("a");
+    downloadLink.href = `${clip.url}?download=1`;
+    downloadLink.textContent = "Baixar";
 
-    const acoes = document.createElement("div");
-    acoes.className = "acoes";
-    acoes.append(baixar);
+    const actionsRow = document.createElement("div");
+    actionsRow.className = "actions";
+    actionsRow.append(downloadLink);
 
-    bloco.append(titulo, video, acoes);
-    el.clipes.append(bloco);
+    wrapper.append(title, video, actionsRow);
+    el.clips.append(wrapper);
   }
 
-  if (estado.failed.length > 0) {
-    el.falhas.innerHTML = "";
-    for (const falha of estado.failed) {
+  if (state.failed.length > 0) {
+    el.failures.innerHTML = "";
+    for (const failure of state.failed) {
       const li = document.createElement("li");
-      li.textContent = `${falha.time}: ${falha.error}`;
-      el.falhas.append(li);
+      li.textContent = `${failure.time}: ${failure.error}`;
+      el.failures.append(li);
     }
-    el.falhas.hidden = false;
+    el.failures.hidden = false;
   }
 
-  if (estado.status !== "running") {
-    fonte?.close();
-    // O job terminou (com sucesso ou não): o usuário precisa poder gerar
-    // outro sem precisar mexer numa caixa de seleção antes.
-    atualizarBotao();
-    el.acoes.innerHTML = "";
+  if (state.status !== "running") {
+    source?.close();
+    // The job is finished (successfully or not): the user needs to be able
+    // to generate another one without first touching a checkbox.
+    updateButton();
+    el.actions.innerHTML = "";
 
-    if (estado.merged) {
+    if (state.merged) {
       const link = document.createElement("a");
-      link.href = `${estado.merged.url}?download=1`;
-      link.textContent = `Baixar vídeo único (${estado.merged.duration.toFixed(0)}s)`;
-      el.acoes.append(link);
+      link.href = `${state.merged.url}?download=1`;
+      link.textContent = `Baixar vídeo único (${state.merged.duration.toFixed(0)}s)`;
+      el.actions.append(link);
     }
-    if (estado.clips.length > 0) {
+    if (state.clips.length > 0) {
       const zip = document.createElement("a");
       zip.href = `/api/jobs/${jobId}/zip`;
       zip.textContent = "Baixar todos (.zip)";
-      el.acoes.append(zip);
-      el.acoes.hidden = false;
+      el.actions.append(zip);
+      el.actions.hidden = false;
     }
 
-    if (estado.expiresAt) {
-      const quando = new Date(estado.expiresAt).toLocaleTimeString("pt-BR", {
+    if (state.expiresAt) {
+      const when = new Date(state.expiresAt).toLocaleTimeString("pt-BR", {
         hour: "2-digit",
         minute: "2-digit",
       });
-      el.expiracao.textContent = `Os arquivos somem às ${quando}.`;
-      el.expiracao.hidden = false;
+      el.expiration.textContent = `Os arquivos somem às ${when}.`;
+      el.expiration.hidden = false;
     }
   }
 }
 
-el.quadra.addEventListener("change", () => {
-  el.rotuloSlug.hidden = el.quadra.value !== OUTRA;
-  aplicarSwapPadrao();
-  void carregarDia();
+el.field.addEventListener("change", () => {
+  el.slugLabel.hidden = el.field.value !== OTHER;
+  applyDefaultSwap();
+  void loadDay();
 });
-el.slug.addEventListener("change", () => void carregarDia());
-el.data.addEventListener("change", () => void carregarDia());
-el.hora.addEventListener("change", mostrarLances);
-el.marcarTodos.addEventListener("change", () => {
-  for (const caixa of el.listaLances.querySelectorAll("input")) {
-    caixa.checked = el.marcarTodos.checked;
+el.slug.addEventListener("change", () => void loadDay());
+el.date.addEventListener("change", () => void loadDay());
+el.hour.addEventListener("change", showPlays);
+el.checkAll.addEventListener("change", () => {
+  for (const checkbox of el.playList.querySelectorAll("input")) {
+    checkbox.checked = el.checkAll.checked;
   }
-  atualizarBotao();
+  updateButton();
 });
-el.gerar.addEventListener("click", () => void gerar());
+el.generate.addEventListener("click", () => void generate());
 
-await carregarQuadras();
+await loadFields();
 
-// `/j/<id>` reabre um job existente: recarregar não perde o progresso.
-const emAndamento = location.pathname.match(/^\/j\/([\w-]+)$/);
-if (emAndamento) acompanhar(emAndamento[1]);
-else void carregarDia();
+// `/j/<id>` reopens an existing job: reloading doesn't lose progress.
+const inProgress = location.pathname.match(/^\/j\/([\w-]+)$/);
+if (inProgress) track(inProgress[1]);
+else void loadDay();

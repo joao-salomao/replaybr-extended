@@ -1,20 +1,20 @@
 :root {
-  --fundo: #10151a;
-  --painel: #182029;
-  --borda: #26313d;
-  --texto: #e6edf3;
-  --suave: #93a1b0;
-  --destaque: #1f9e57;
-  --erro: #d9534f;
+  --background: #10151a;
+  --panel: #182029;
+  --border: #26313d;
+  --text: #e6edf3;
+  --muted: #93a1b0;
+  --accent: #1f9e57;
+  --error: #d9534f;
 }
 
 * {
   box-sizing: border-box;
 }
 
-/* Vários seletores abaixo definem `display: grid`/`flex` em elementos que
-   também usam o atributo `hidden` (label, .acoes). Sem isso, o atributo é
-   ignorado: regra de autor sempre vence a folha padrão do navegador. */
+/* Several selectors below set `display: grid`/`flex` on elements that also
+   use the `hidden` attribute (label, .actions). Without this, the attribute
+   is ignored: author rule always beats the browser's default stylesheet. */
 [hidden] {
   display: none !important;
 }
@@ -22,8 +22,8 @@
 body {
   margin: 0;
   padding: 1rem;
-  background: var(--fundo);
-  color: var(--texto);
+  background: var(--background);
+  color: var(--text);
   font: 16px/1.5 system-ui, -apple-system, sans-serif;
 }
 
@@ -39,7 +39,7 @@ header h1 {
 
 header p {
   margin: 0.25rem 0 0;
-  color: var(--suave);
+  color: var(--muted);
   font-size: 0.9rem;
 }
 
@@ -51,8 +51,8 @@ main {
 }
 
 section {
-  background: var(--painel);
-  border: 1px solid var(--borda);
+  background: var(--panel);
+  border: 1px solid var(--border);
   border-radius: 10px;
   padding: 1rem;
 }
@@ -62,14 +62,14 @@ h2 {
   font-size: 1.1rem;
 }
 
-.linha {
+.row {
   display: grid;
   gap: 0.75rem;
   margin-bottom: 0.75rem;
 }
 
 @media (min-width: 560px) {
-  .linha {
+  .row {
     grid-template-columns: 1fr 1fr;
   }
 }
@@ -78,7 +78,7 @@ label {
   display: grid;
   gap: 0.3rem;
   font-size: 0.85rem;
-  color: var(--suave);
+  color: var(--muted);
 }
 
 select,
@@ -86,27 +86,27 @@ input[type="date"],
 input[type="text"] {
   width: 100%;
   padding: 0.6rem;
-  background: var(--fundo);
-  color: var(--texto);
-  border: 1px solid var(--borda);
+  background: var(--background);
+  color: var(--text);
+  border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 1rem;
 }
 
-.cabecalho-lances {
+.plays-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.todos {
+.select-all {
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 0.4rem;
 }
 
-#lista-lances {
+#play-list {
   list-style: none;
   margin: 0.5rem 0;
   padding: 0;
@@ -114,53 +114,53 @@ input[type="text"] {
   overflow-y: auto;
 }
 
-#lista-lances li {
-  border-bottom: 1px solid var(--borda);
+#play-list li {
+  border-bottom: 1px solid var(--border);
 }
 
-#lista-lances label {
+#play-list label {
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 0.6rem;
-  /* Área de toque grande: o uso provável é o celular. */
+  /* Large tap target: mobile is the likely usage. */
   padding: 0.7rem 0.2rem;
-  color: var(--texto);
+  color: var(--text);
   font-size: 1rem;
 }
 
 input[type="checkbox"] {
   width: 1.15rem;
   height: 1.15rem;
-  accent-color: var(--destaque);
+  accent-color: var(--accent);
   flex: none;
 }
 
-.selo {
+.badge {
   margin-left: auto;
-  color: var(--suave);
+  color: var(--muted);
   font-size: 0.8rem;
 }
 
-.opcoes {
+.options {
   display: grid;
   gap: 0.6rem;
   margin: 1rem 0;
 }
 
-.opcoes label {
+.options label {
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 0.6rem;
-  color: var(--texto);
+  color: var(--text);
   font-size: 0.95rem;
 }
 
 button {
   width: 100%;
   padding: 0.8rem;
-  background: var(--destaque);
+  background: var(--accent);
   color: #fff;
   border: 0;
   border-radius: 8px;
@@ -174,52 +174,52 @@ button:disabled {
   cursor: default;
 }
 
-.progresso {
+.progress {
   margin: 0 0 0.75rem;
   font-variant-numeric: tabular-nums;
 }
 
-.acoes {
+.actions {
   display: grid;
   gap: 0.5rem;
   margin-bottom: 0.75rem;
 }
 
-.acoes a {
+.actions a {
   display: block;
   padding: 0.7rem;
-  background: var(--fundo);
-  border: 1px solid var(--borda);
+  background: var(--background);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  color: var(--texto);
+  color: var(--text);
   text-align: center;
   text-decoration: none;
 }
 
-.aviso {
+.notice {
   margin: 0 0 0.5rem;
-  color: var(--suave);
+  color: var(--muted);
   font-size: 0.85rem;
 }
 
-.falhas {
+.failures {
   margin: 0 0 0.75rem;
   padding-left: 1.2rem;
-  color: var(--erro);
+  color: var(--error);
   font-size: 0.85rem;
 }
 
-.clipe {
+.clip {
   margin-bottom: 1.25rem;
 }
 
-.clipe h3 {
+.clip h3 {
   margin: 0 0 0.4rem;
   font-size: 0.95rem;
   font-weight: 600;
 }
 
-.clipe video {
+.clip video {
   width: 100%;
   border-radius: 8px;
   background: #000;
