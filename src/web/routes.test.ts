@@ -344,4 +344,103 @@ describe("GET /api/jobs/:id/zip", () => {
   test("zip de job inexistente devolve 404", async () => {
     expect((await app.request("/api/jobs/naoexiste/zip")).status).toBe(404);
   });
+
+  test("pedido no meio do job devolve 409 e não deixa zip parcial em cache", async () => {
+    let liberar: () => void = () => {};
+    const portao = new Promise<void>((resolve) => {
+      liberar = resolve;
+    });
+
+    const renderControlado = async (
+      request: RenderRequest,
+    ): Promise<RenderResult> => {
+      const path = `${request.outDir}/01_20-34-25.mp4`;
+      await Bun.write(path, "conteudo-do-video");
+      const clip = {
+        index: 0,
+        timestamp: "2026-08-13T20:34:25",
+        path,
+        cameras: 2 as const,
+      };
+      request.onClip(clip);
+      await portao;
+      return { clips: [clip], merged: null, failed: [] };
+    };
+
+    const storeControlado = new JobStore({
+      root,
+      render: renderControlado,
+      now: () => 0,
+    });
+    const appControlado = createApp({
+      fetchReplays: async () => REPLAYS,
+      jobs: storeControlado,
+      publicDir: "public",
+    });
+
+    const jobRes = await appControlado.request("/api/jobs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        field: "four-play-3",
+        date: "2026-08-13",
+        hour: "20",
+        replays: ["2026-08-13T20:34:25"],
+        swap: true,
+        concat: false,
+      }),
+    });
+    const { jobId } = (await jobRes.json()) as { jobId: string };
+    const job = storeControlado.get(jobId);
+    if (!job) throw new Error("job não criado");
+
+    // Espera o clipe aparecer: prova que o pedido de zip chega com o job "no
+    // meio" — já com conteúdo parcial — e não antes de qualquer clipe existir.
+    while (job.clips.length === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    const meioRes = await appControlado.request(`/api/jobs/${jobId}/zip`);
+    expect(meioRes.status).toBe(409);
+    const corpoMeio = (await meioRes.json()) as { error: string };
+    expect(corpoMeio.error).toContain("gerado");
+
+    // Nada foi construído nem cacheado a partir do pedido rejeitado.
+    expect(job.zipBuild).toBeNull();
+
+    liberar();
+    await job.done;
+
+    const finalRes = await appControlado.request(`/api/jobs/${jobId}/zip`);
+    expect(finalRes.status).toBe(200);
+    expect((await finalRes.arrayBuffer()).byteLength).toBeGreaterThan(0);
+  });
+
+  test("duas requisições concorrentes resultam num único zip íntegro", async () => {
+    const { jobId } = (await (await criarJob()).json()) as { jobId: string };
+    await store.get(jobId)?.done;
+
+    const [res1, res2] = await Promise.all([
+      app.request(`/api/jobs/${jobId}/zip`),
+      app.request(`/api/jobs/${jobId}/zip`),
+    ]);
+
+    expect(res1.status).toBe(200);
+    expect(res2.status).toBe(200);
+
+    const bytes1 = new Uint8Array(await res1.arrayBuffer());
+    const bytes2 = new Uint8Array(await res2.arrayBuffer());
+    // As duas respostas vieram do mesmo arquivo final, byte a byte — nenhuma
+    // pegou uma escrita pela metade da outra.
+    expect(bytes1).toEqual(bytes2);
+    expect(bytes1.length).toBeGreaterThan(0);
+
+    const arquivo = join(root, "verificacao.zip");
+    await Bun.write(arquivo, bytes1);
+    const proc = Bun.spawn(["unzip", "-t", arquivo], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expect(await proc.exited).toBe(0);
+  });
 });

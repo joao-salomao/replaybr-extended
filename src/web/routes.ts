@@ -1,3 +1,4 @@
+import { rename } from "node:fs/promises";
 import { basename } from "node:path";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
@@ -165,14 +166,45 @@ export function createApp({ fetchReplays, jobs, publicDir }: RouteDeps): Hono {
     const job = jobs.get(c.req.param("id"));
     if (!job) return c.json({ error: "Esse link expirou." }, 404);
 
-    // Montado só na primeira vez que alguém pede.
-    job.zipPath ??= await buildZip(
-      job.clips.map((clip) => clip.path),
-      `${job.dir}/todos.zip`,
-    );
+    // `clips` ainda está sendo preenchido enquanto o job roda: montar agora
+    // capturaria só os clipes prontos até aqui, e esse zip parcial ficaria em
+    // cache pelas 2h de vida do job.
+    if (job.status === "running") {
+      return c.json(
+        { error: "O job ainda está sendo gerado. Aguarde terminar para baixar o zip." },
+        409,
+      );
+    }
+
+    // `??=` aqui é atômico em relação ao event loop: a checagem e a
+    // atribuição não têm `await` entre si, então duas requisições que chegam
+    // "ao mesmo tempo" nunca disparam `buildZip` duas vezes — a segunda
+    // sempre encontra a promessa da primeira já guardada.
+    job.zipBuild ??= (async () => {
+      const tmp = `${job.dir}/todos.zip.tmp`;
+      const final = `${job.dir}/todos.zip`;
+      await buildZip(
+        job.clips.map((clip) => clip.path),
+        tmp,
+      );
+      // Só troca de nome depois de pronto: ninguém consegue servir um
+      // arquivo sendo reescrito por baixo.
+      await rename(tmp, final);
+      return final;
+    })();
+
+    let zipPath: string;
+    try {
+      zipPath = await job.zipBuild;
+    } catch (error) {
+      // Falhou: libera para tentar de novo numa próxima requisição, em vez de
+      // deixar o job preso numa promessa rejeitada para sempre.
+      job.zipBuild = null;
+      throw error;
+    }
 
     const nome = `${job.input.field}-${job.input.date}-${job.input.hour}.zip`;
-    return new Response(Bun.file(job.zipPath), {
+    return new Response(Bun.file(zipPath), {
       headers: {
         "content-type": "application/zip",
         "content-disposition": `attachment; filename="${nome}"`,

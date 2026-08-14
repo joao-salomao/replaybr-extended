@@ -67,7 +67,12 @@ export interface Job {
   failed: RenderResult["failed"];
   error: string | null;
   finishedAt: number | null;
-  zipPath: string | null;
+  /**
+   * Memoiza a *promessa* de montagem do zip, não o caminho: duas requisições
+   * concorrentes assim compartilham a mesma montagem em vez de cada uma
+   * escrever por cima do arquivo da outra.
+   */
+  zipBuild: Promise<string> | null;
   /** Resolve quando o job termina, com sucesso ou não. */
   done: Promise<void>;
 }
@@ -113,7 +118,7 @@ export class JobStore {
       failed: [],
       error: null,
       finishedAt: null,
-      zipPath: null,
+      zipBuild: null,
       done: Promise.resolve(),
     };
 
