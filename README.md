@@ -6,6 +6,10 @@ Disponível como CLI e como aplicação web.
 
 Quadras com uma câmera só também funcionam — veja [Câmera única](#câmera-única).
 
+![A interface web: seleção de quadra, data e hora, a lista de lances com as câmeras originais abertas para preview, e o botão de gerar](docs/ui.png)
+
+Na web você escolhe a quadra, a data e a hora, vê as câmeras originais de cada lance antes de decidir, marca o que quer e acompanha a conversão ao vivo — cada clipe aparece assim que sai do ffmpeg.
+
 ## Requisitos
 
 - `bun`
