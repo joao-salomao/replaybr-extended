@@ -123,6 +123,14 @@ function showPlays() {
   el.playList.innerHTML = "";
   for (const play of hour.replays) {
     const li = document.createElement("li");
+
+    // The checkbox lives inside a <label>, so any click within it toggles
+    // selection. The preview toggle must NOT do that — it sits as a sibling
+    // of the label, not a descendant, so its clicks never reach the label's
+    // native click-to-toggle behavior.
+    const row = document.createElement("div");
+    row.className = "play-row";
+
     const label = document.createElement("label");
 
     const checkbox = document.createElement("input");
@@ -139,7 +147,20 @@ function showPlays() {
     badge.textContent = play.cameras === 2 ? "2 câmeras" : "1 câmera";
 
     label.append(checkbox, text, badge);
-    li.append(label);
+
+    const preview = document.createElement("div");
+    preview.className = "preview";
+    preview.hidden = true;
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "preview-toggle";
+    toggle.textContent = "Ver câmeras";
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.addEventListener("click", () => togglePreview(toggle, preview, play));
+
+    row.append(label, toggle);
+    li.append(row, preview);
     el.playList.append(li);
   }
 
@@ -149,6 +170,39 @@ function showPlays() {
   el.checkAll.checked = true;
   el.plays.hidden = false;
   updateButton();
+}
+
+// Builds the <video> elements lazily, on the first expand, so opening the
+// list never fires a single request to the ReplayBR CDN. `preload="none"`
+// on top is belt-and-suspenders for the same goal.
+function togglePreview(toggle, preview, play) {
+  const expanded = !preview.hidden;
+  if (expanded) {
+    for (const video of preview.querySelectorAll("video")) video.pause();
+    preview.hidden = true;
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.textContent = "Ver câmeras";
+    return;
+  }
+
+  if (preview.childElementCount === 0) {
+    preview.append(buildPreviewVideo(play.camera1Url));
+    if (play.camera2Url) preview.append(buildPreviewVideo(play.camera2Url));
+  }
+
+  preview.hidden = false;
+  toggle.setAttribute("aria-expanded", "true");
+  toggle.textContent = "Ocultar câmeras";
+}
+
+function buildPreviewVideo(url) {
+  const video = document.createElement("video");
+  video.controls = true;
+  video.preload = "none";
+  // Straight at the CDN: <video> plays it fine without CORS, and fetch()
+  // would be blocked by the CDN's access-control-allow-origin anyway.
+  video.src = url;
+  return video;
 }
 
 const selectedTimestamps = () =>

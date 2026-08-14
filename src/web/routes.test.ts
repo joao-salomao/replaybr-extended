@@ -120,10 +120,48 @@ describe("GET /api/replays", () => {
       label: "20:00",
       anyTwoCameras: true,
       replays: [
-        { timestamp: "2026-08-13T20:34:25", time: "20:34:25", cameras: 2 },
-        { timestamp: "2026-08-13T20:35:39", time: "20:35:39", cameras: 2 },
+        {
+          timestamp: "2026-08-13T20:34:25",
+          time: "20:34:25",
+          cameras: 2,
+          camera1Url: "https://example/2026-08-13T20:34:25/camera1.mp4",
+          camera2Url: "https://example/2026-08-13T20:34:25/camera2.mp4",
+        },
+        {
+          timestamp: "2026-08-13T20:35:39",
+          time: "20:35:39",
+          cameras: 2,
+          camera1Url: "https://example/2026-08-13T20:35:39/camera1.mp4",
+          camera2Url: "https://example/2026-08-13T20:35:39/camera2.mp4",
+        },
       ],
     });
+  });
+
+  test("includes camera1Url for a single-camera play, with no phantom camera2Url", async () => {
+    const singleCameraApp = createApp({
+      fetchReplays: async () => [
+        {
+          timestamp: "2026-08-13T20:00:00",
+          camera1_url: "https://example/single/camera1.mp4",
+        },
+      ],
+      jobs: store,
+      publicDir: "public",
+    });
+
+    const res = await singleCameraApp.request(
+      "/api/replays?field=four-play-3&date=2026-08-13",
+    );
+    const body = (await res.json()) as { hours: Array<{ replays: unknown[] }> };
+
+    expect(body.hours[0]?.replays[0]).toEqual({
+      timestamp: "2026-08-13T20:00:00",
+      time: "20:00:00",
+      cameras: 1,
+      camera1Url: "https://example/single/camera1.mp4",
+    });
+    expect(body.hours[0]?.replays[0]).not.toHaveProperty("camera2Url");
   });
 
   test("rejects an invalid slug", async () => {

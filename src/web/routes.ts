@@ -61,6 +61,10 @@ export function createApp({ fetchReplays, jobs, publicDir }: RouteDeps): Hono {
           timestamp: replay.timestamp,
           time: replay.timestamp.slice(11),
           cameras: replay.camera2_url ? 2 : 1,
+          // Points the front end's <video> straight at the CDN: no fetch(),
+          // no proxying, so previewing a play costs our server nothing.
+          camera1Url: replay.camera1_url,
+          ...(replay.camera2_url ? { camera2Url: replay.camera2_url } : {}),
         })),
       })),
     });
