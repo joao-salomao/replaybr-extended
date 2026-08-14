@@ -29,3 +29,17 @@ jobs:
       # The suite is hermetic: it stubs fetch and never invokes ffmpeg,
       # so the runner needs nothing beyond Bun.
       - run: bun test
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Docker is preinstalled on the runner, so a plain build needs no action.
+      - run: docker build -t replaybr-extended:ci .
+
+      # Building proves the Dockerfile is valid; this proves the thing the
+      # image exists for. The host is not expected to have ffmpeg, so if it
+      # were missing here the server would refuse to boot in production.
+      - name: Check ffmpeg and ffprobe are in the image
+        run: docker run --rm replaybr-extended:ci sh -c "ffmpeg -version && ffprobe -version"

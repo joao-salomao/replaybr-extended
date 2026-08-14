@@ -49,6 +49,8 @@ const app = createApp({
 
 app.use("/*", serveStatic({ root: "./public" }));
 
-console.log(`▶ replaybr-extended em http://localhost:${PORT}`);
+// No host in the message: the server may be reached through a reverse proxy
+// or a public address, and printing "localhost" would name the wrong one.
+console.log(`▶ replaybr-extended ouvindo na porta ${PORT}`);
 
 export default { port: PORT, fetch: app.fetch, idleTimeout: 255 };
