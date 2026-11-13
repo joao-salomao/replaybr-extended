@@ -52,10 +52,7 @@ Courts with a single camera work too. When an hour mixes one- and two-camera pla
 ```bash
 bun run typecheck   # tsc, type checking only
 bun test            # pure logic, no network
-bun run e2e         # build + the extension in Playwright's Chromium
 ```
-
-`bun run e2e` needs Playwright's Chromium once: `bunx playwright install chromium`. It loads `dist/` and answers the requests to both ReplayBR hosts with the fixtures in `e2e/`, so it never touches the real site.
 
 ```
 manifest.config.ts   MV3 manifest (CRXJS)
@@ -70,7 +67,6 @@ src/encoder.ts       side-by-side filter + ffmpeg.wasm
 src/mp4.ts           dimensions from the MP4 box tree
 src/render.ts        download → render pipeline, several plays in parallel
 src/zip.ts           the .zip of every clip
-e2e/                 end-to-end test and fixtures
 ```
 
 ## Releasing a version
@@ -78,6 +74,6 @@ e2e/                 end-to-end test and fixtures
 1. Bump `version` in `package.json` (the manifest reads the same version) and merge into `main`.
 2. In **Actions > Release > Run workflow**, run it on `main`.
 
-The workflow runs the typecheck, the unit tests and the e2e, builds `dist/`, publishes the `v<version>` release with the `.zip` attached, and stops if that tag already exists.
+The workflow runs the typecheck and the unit tests, builds `dist/`, publishes the `v<version>` release with the `.zip` attached, and stops if that tag already exists.
 
 CI and the release install Bun at the version in the `BUN_VERSION` repository variable (Settings > Secrets and variables > Actions > Variables). Keep it the same as your local version (`bun --version`).
