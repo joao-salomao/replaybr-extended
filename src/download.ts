@@ -6,8 +6,8 @@ import {
 } from "./api.ts";
 
 /**
- * Ceiling per download attempt of a file. Bun's `fetch` has no default
- * timeout: a CDN that sends headers and then hangs the body would keep
+ * Ceiling per download attempt of a file. `fetch` has no default timeout:
+ * a CDN that sends headers and then hangs the body would keep
  * the body read stuck forever, without `withRetry` noticing
  * it — it only reacts to rejections, not hangs. Generous enough for a ~7 MB
  * file on a bad connection (at ~300 kbps that takes a bit over 3 min);

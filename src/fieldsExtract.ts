@@ -5,6 +5,8 @@ const MAPPING_EXPORT = '"humanReadableFieldNameMapping",0,{';
 // Keys come quoted ("four-play-3") or bare (olaria) from the minifier.
 const PAIR = /(?:"([^"]+)"|([A-Za-z_$][\w$]*)):"([^"]*)"/g;
 const CHUNK = /<script[^>]+src="(\/_next\/static\/chunks\/[^"]+\.js)"/g;
+/** How long the dropdown waits for the site before using the saved list. */
+const LOAD_BUDGET_MS = 8_000;
 
 export interface BundleFields {
   labels: Record<string, string>;
@@ -66,10 +68,20 @@ async function fetchSiteText(url: string): Promise<string> {
 /**
  * The field list as the site ships it today. The chunk name changes on every
  * deploy, so every chunk the page loads is searched for the export. Anything
- * going wrong falls back to the list saved in `fields.ts`.
+ * going wrong, or the site taking longer than `budgetMs`, falls back to the
+ * list saved in `fields.ts`: the dropdown never waits on a hung request.
  */
 export async function loadFields(
   fetchText: (url: string) => Promise<string> = fetchSiteText,
+  budgetMs = LOAD_BUDGET_MS,
+): Promise<{ fields: Field[]; fromSite: boolean }> {
+  const fallback = { fields: FIELDS, fromSite: false };
+  const timeout = new Promise<typeof fallback>((resolve) => setTimeout(resolve, budgetMs, fallback));
+  return Promise.race([fromSite(fetchText), timeout]);
+}
+
+async function fromSite(
+  fetchText: (url: string) => Promise<string>,
 ): Promise<{ fields: Field[]; fromSite: boolean }> {
   try {
     const page = await fetchText(`${SITE}/replay`);

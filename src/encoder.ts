@@ -19,7 +19,13 @@ export interface ClipEncoder {
 }
 
 /** The part of ffmpeg.wasm the encoder uses; loading happens elsewhere. */
-export type FfmpegLike = Pick<FFmpeg, "writeFile" | "exec" | "readFile" | "deleteFile">;
+export type FfmpegLike = Pick<FFmpeg, "writeFile" | "exec" | "readFile" | "deleteFile" | "terminate">;
+
+/**
+ * The wasm module itself died (abort, out of memory), as opposed to ffmpeg
+ * exiting with an error. The instance is unusable from here on.
+ */
+export class EncoderCrashedError extends Error {}
 
 /**
  * Each camera is scaled to the same cell, keeping its aspect ratio, so every
@@ -64,18 +70,22 @@ export function createFfmpegEncoder(ffmpeg: FfmpegLike): ClipEncoder {
           // hand it a copy so the caller's bytes stay usable.
           await ffmpeg.writeFile(name, sources[i]!.slice());
         }
-        const code = await ffmpeg.exec([
-          "-y", "-loglevel", "error",
-          ...inputs.flatMap((name) => ["-i", name]),
-          "-filter_complex", buildFilterGraph(sources.length, cell, columns, fps),
-          "-map", "[v]",
-          "-an",
-          "-c:v", "libx264",
-          "-preset", preset,
-          "-crf", String(crf),
-          "-pix_fmt", "yuv420p",
-          OUTPUT,
-        ]);
+        const code = await ffmpeg
+          .exec([
+            "-y", "-loglevel", "error",
+            ...inputs.flatMap((name) => ["-i", name]),
+            "-filter_complex", buildFilterGraph(sources.length, cell, columns, fps),
+            "-map", "[v]",
+            "-an",
+            "-c:v", "libx264",
+            "-preset", preset,
+            "-crf", String(crf),
+            "-pix_fmt", "yuv420p",
+            OUTPUT,
+          ])
+          .catch((error: unknown) => {
+            throw new EncoderCrashedError(error instanceof Error ? error.message : String(error));
+          });
         if (code !== 0) throw new Error(`ffmpeg saiu com código ${code}`);
 
         const out = await ffmpeg.readFile(OUTPUT);

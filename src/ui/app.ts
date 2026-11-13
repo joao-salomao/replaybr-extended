@@ -1,4 +1,5 @@
 import { fetchReplaysForDate, groupReplaysByHour, type HourGroup, type Replay } from "../api.ts";
+import { localDate } from "../dates.ts";
 import { downloadReplayPairs } from "../download.ts";
 import { createFfmpegEncoder, type FfmpegLike } from "../encoder.ts";
 import { resolveField, type Field } from "../fields.ts";
@@ -66,7 +67,7 @@ async function setUpFields(): Promise<void> {
 
   for (const field of fields) el.field.append(new Option(field.label, field.slug));
   el.field.append(new Option("Outra quadra…", OTHER));
-  el.date.value = new Date().toISOString().slice(0, 10);
+  el.date.value = localDate(new Date());
 
   if (!loaded.fromSite) notice("Lista de quadras do site indisponível. Usando a lista salva.");
 }
@@ -277,6 +278,13 @@ async function generate(): Promise<void> {
     });
 
     el.progress.textContent = `Pronto — ${result.clips.length} vídeo(s).`;
+    if (result.crashed) {
+      // The wasm module is dead: drop it so the next "Gerar" loads a fresh one.
+      (await ffmpeg)?.terminate();
+      ffmpeg = null;
+      el.progress.textContent +=
+        " O ffmpeg travou, provavelmente sem memória. Gere os lances que faltaram de novo.";
+    }
 
     for (const failure of result.failed) {
       const li = document.createElement("li");

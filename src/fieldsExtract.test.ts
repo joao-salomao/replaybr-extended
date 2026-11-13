@@ -67,6 +67,12 @@ describe("loadFields", () => {
     expect(await loadFields(fetchText)).toEqual({ fields: FIELDS, fromSite: false });
   });
 
+  test("falls back when the site hangs past the time budget", async () => {
+    const fetchText = () => new Promise<string>(() => {});
+
+    expect(await loadFields(fetchText, 20)).toEqual({ fields: FIELDS, fromSite: false });
+  });
+
   test("uses the site list when found", async () => {
     const requested: string[] = [];
     const fetchText = async (url: string) => {

@@ -3,7 +3,6 @@ import {
   CloudflareBlockedError,
   fetchReplaysForDate,
   groupReplaysByHour,
-  normalizeHour,
   ReplayBrUnavailableError,
   type Replay,
 } from "./api.ts";
@@ -66,31 +65,6 @@ describe("groupReplaysByHour", () => {
   test("empty list returns no groups", () => {
     expect(groupReplaysByHour([])).toEqual([]);
   });
-});
-
-describe("normalizeHour", () => {
-  test.each([
-    ["20", "20"],
-    ["20:00", "20"],
-    ["20:30", "20"],
-    ["2030", "20"],
-    ["20h30", "20"],
-    ["20.30", "20"],
-    ["9", "09"],
-    ["00:15", "00"],
-    // Three digits are read as H + MM: "203" is 2:03.
-    ["203", "02"],
-    [" 20 ", "20"],
-  ])("normalizes %p to %p", (input, expected) => {
-    expect(normalizeHour(input)).toBe(expected);
-  });
-
-  test.each([["24"], ["20:60"], ["abc"], [""], ["-1"], ["20:1"]])(
-    "rejects %p",
-    (input) => {
-      expect(normalizeHour(input)).toBeNull();
-    },
-  );
 });
 
 const originalFetch = globalThis.fetch;

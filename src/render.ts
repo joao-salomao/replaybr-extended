@@ -1,6 +1,6 @@
 import type { Replay } from "./api.ts";
 import type { downloadReplayPairs, ReplayPair } from "./download.ts";
-import type { ClipEncoder } from "./encoder.ts";
+import { EncoderCrashedError, type ClipEncoder } from "./encoder.ts";
 import type { Dimensions, probeDimensions } from "./mp4.ts";
 
 export interface RenderProgress {
@@ -28,6 +28,8 @@ export interface RenderResult {
   /** In chronological order. */
   clips: Clip[];
   failed: RenderFailure[];
+  /** The encoder died mid-job: it must be reloaded before the next one. */
+  crashed: boolean;
 }
 
 /** Seam for tests: lets the pipeline run without the network or ffmpeg. */
@@ -84,8 +86,12 @@ export async function renderReplays({
   let cell: Dimensions | null = null;
   let rendered = 0;
   let chain: Promise<void> = Promise.resolve();
+  // Once the encoder dies, the remaining plays fail fast instead of each
+  // feeding a dead module.
+  let crash: EncoderCrashedError | null = null;
 
   const renderPair = async (pair: ReplayPair): Promise<void> => {
+    if (crash) throw crash;
     const first = pair.cameras[0];
     if (!first) return;
 
@@ -117,6 +123,7 @@ export async function renderReplays({
       chain = chain
         .then(() => renderPair(pair))
         .catch((error: unknown) => {
+          if (error instanceof EncoderCrashedError) crash = error;
           failed.push({ timestamp: pair.timestamp, error: message(error) });
         });
     },
@@ -125,5 +132,5 @@ export async function renderReplays({
   await chain;
 
   clips.sort((a, b) => a.index - b.index);
-  return { clips, failed };
+  return { clips, failed, crashed: crash !== null };
 }

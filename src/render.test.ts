@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Replay } from "./api.ts";
 import type { ReplayPair } from "./download.ts";
-import type { EncodeOptions } from "./encoder.ts";
+import { EncoderCrashedError, type EncodeOptions } from "./encoder.ts";
 import { renderReplays, type Clip, type RenderDeps } from "./render.ts";
 
 const replay = (timestamp: string, cameras: 1 | 2): Replay => ({
@@ -214,5 +214,23 @@ describe("renderReplays", () => {
     await renderReplays(request(THREE, deps));
 
     expect(peak).toBe(1);
+  });
+
+  test("after the encoder crashes, the remaining plays fail without encoding", async () => {
+    const { deps } = spy([0, 1, 2]);
+    let calls = 0;
+    deps.encoder = {
+      render: async () => {
+        calls++;
+        throw new EncoderCrashedError("RuntimeError: Aborted(OOM)");
+      },
+    };
+
+    const result = await renderReplays(request(THREE, deps));
+
+    expect(calls).toBe(1);
+    expect(result.clips).toEqual([]);
+    expect(result.failed).toHaveLength(3);
+    expect(result.crashed).toBe(true);
   });
 });

@@ -22,9 +22,8 @@ export interface HourGroup {
 
 /**
  * The ReplayBR API didn't respond: down, DNS failed, timeout, or it
- * responded with an error status. A dedicated class lets whoever handles the
- * error (the HTTP route) tell this cause — by far the most likely one —
- * apart from an arbitrary bug, without having to guess from the message.
+ * responded with an error status. Its message is written for the user: the
+ * app shows it as is.
  */
 export class ReplayBrUnavailableError extends Error {}
 
@@ -97,16 +96,4 @@ export function groupReplaysByHour(replays: Replay[]): HourGroup[] {
   return [...byHour.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([hour, list]) => ({ hour, label: `${hour}:00`, replays: list }));
-}
-
-/** Accepts "20", "20:30", "2030", or "20h30" and returns the hour ("20"). */
-export function normalizeHour(input: string): string | null {
-  const match = input.trim().match(/^(\d{1,2})(?:[:h.]?(\d{2}))?$/);
-  if (!match?.[1]) return null;
-
-  const hour = Number(match[1]);
-  const minute = match[2] === undefined ? 0 : Number(match[2]);
-  if (hour > 23 || minute > 59) return null;
-
-  return String(hour).padStart(2, "0");
 }

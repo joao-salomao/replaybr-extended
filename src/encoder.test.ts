@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { buildFilterGraph, createFfmpegEncoder, type FfmpegLike } from "./encoder.ts";
+import {
+  buildFilterGraph,
+  createFfmpegEncoder,
+  EncoderCrashedError,
+  type FfmpegLike,
+} from "./encoder.ts";
 
 const cell = { width: 704, height: 560 };
 const scaled = (i: number) =>
@@ -43,6 +48,7 @@ function fakeFfmpeg(execFails = false) {
       deleted.push(path);
       return true;
     },
+    terminate: () => {},
   };
   return { ffmpeg, written, deleted, execs };
 }
@@ -100,10 +106,19 @@ describe("createFfmpegEncoder", () => {
     expect(sizes).toEqual([1, 1, 1, 1]);
   });
 
-  test("a non-zero exit code rejects", async () => {
+  test("a non-zero exit code rejects, but is not a crash", async () => {
     const { ffmpeg } = fakeFfmpeg();
     ffmpeg.exec = async () => 1;
 
-    await expect(createFfmpegEncoder(ffmpeg).render(options)).rejects.toThrow();
+    const error = await createFfmpegEncoder(ffmpeg).render(options).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(EncoderCrashedError);
+  });
+
+  test("an exec that throws (wasm abort, out of memory) is an EncoderCrashedError", async () => {
+    const { ffmpeg } = fakeFfmpeg(true);
+
+    await expect(createFfmpegEncoder(ffmpeg).render(options)).rejects.toThrow(EncoderCrashedError);
   });
 });
