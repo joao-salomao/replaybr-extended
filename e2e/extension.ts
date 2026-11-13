@@ -71,14 +71,18 @@ try {
   await page.goto(`chrome-extension://${extensionId}/app.html`);
 
   // The field list came from the (fixture) site, without the inactive one.
-  await page.waitForSelector('#field option[value="four-play-3"]', { state: "attached" });
-  const options = await page.$$eval("#field option", (els) =>
+  await page.waitForSelector('#field-options option[value="Four Play - Quadra 3"]', {
+    state: "attached",
+  });
+  const options = await page.$$eval("#field-options option", (els) =>
     els.map((o) => (o as HTMLOptionElement).value),
   );
-  assert.deepEqual(options, ["four-play-3", "olaria", "__other__"]);
+  assert.deepEqual(options, ["Four Play - Quadra 3", "Olaria"]);
   assert.equal(await page.isVisible("#selection-notice"), false);
 
-  await page.selectOption("#field", "four-play-3");
+  // The court is searched by name, not scrolled to.
+  await page.fill("#field", "Four Play - Quadra 3");
+  await page.dispatchEvent("#field", "change");
   await page.fill("#date", DATE);
   await page.dispatchEvent("#date", "change");
   await page.waitForSelector("#hour:not([disabled])");

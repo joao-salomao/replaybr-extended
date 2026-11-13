@@ -77,7 +77,8 @@ label {
 
 select,
 input[type="date"],
-input[type="text"] {
+input[type="text"],
+input[type="search"] {
   width: 100%;
   padding: 0.6rem;
   background: var(--background);

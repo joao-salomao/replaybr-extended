@@ -2,7 +2,7 @@ import { fetchReplaysForDate, groupReplaysByHour, type HourGroup, type Replay } 
 import { localDate } from "../dates.ts";
 import { downloadReplayPairs } from "../download.ts";
 import { createFfmpegEncoder, type FfmpegLike } from "../encoder.ts";
-import { resolveField, type Field } from "../fields.ts";
+import { fieldFromInput, type Field } from "../fields.ts";
 import { loadFields } from "../fieldsExtract.ts";
 import { probeDimensions } from "../mp4.ts";
 import { renderReplays, type Clip, type RenderProgress } from "../render.ts";
@@ -12,9 +12,8 @@ import { loadFfmpeg } from "./loadFfmpeg.ts";
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const el = {
-  field: $<HTMLSelectElement>("field"),
-  slugLabel: $("slug-label"),
-  slug: $<HTMLInputElement>("slug"),
+  field: $<HTMLInputElement>("field"),
+  fieldOptions: $<HTMLDataListElement>("field-options"),
   date: $<HTMLInputElement>("date"),
   hour: $<HTMLSelectElement>("hour"),
   selectionNotice: $("selection-notice"),
@@ -31,7 +30,6 @@ const el = {
   clips: $("clips"),
 };
 
-const OTHER = "__other__";
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const PHASES: Record<RenderProgress["phase"], string> = {
   download: "Baixando",
@@ -46,13 +44,13 @@ let ffmpeg: Promise<FfmpegLike> | null = null;
 // Object URLs of the last job's clips, revoked when a new job starts.
 let objectUrls: string[] = [];
 
-// The court select, the slug input and the date input all trigger loadDay(),
+// The court search box and the date input both trigger loadDay(),
 // so a second request can start before the first one answers. Each call gets
 // a sequence number; a call whose number is no longer the latest must not
 // touch the UI, or a slow stale answer would clobber a fresh one.
 let loadDaySequence = 0;
 
-const currentSlug = () => (el.field.value === OTHER ? el.slug.value.trim() : el.field.value);
+const currentField = () => fieldFromInput(el.field.value, fields);
 
 const notice = (message: string) => {
   el.selectionNotice.textContent = message;
@@ -65,19 +63,19 @@ async function setUpFields(): Promise<void> {
   const loaded = await loadFields();
   fields = loaded.fields;
 
-  for (const field of fields) el.field.append(new Option(field.label, field.slug));
-  el.field.append(new Option("Outra quadra…", OTHER));
+  // A <datalist> filters as the user types: no scrolling through ~80 courts.
+  for (const field of fields) el.fieldOptions.append(new Option(field.label, field.label));
   el.date.value = localDate(new Date());
 
   if (!loaded.fromSite) notice("Lista de quadras do site indisponível. Usando a lista salva.");
 }
 
 function applyDefaultSwap(): void {
-  el.swap.checked = fields.find((f) => f.slug === currentSlug())?.defaultSwap ?? false;
+  el.swap.checked = currentField()?.defaultSwap ?? false;
 }
 
 async function loadDay(): Promise<void> {
-  const field = resolveField(currentSlug());
+  const field = currentField();
   if (!field || !DATE.test(el.date.value)) return;
 
   const sequence = ++loadDaySequence;
@@ -301,7 +299,7 @@ async function generate(): Promise<void> {
         zipButton.disabled = true;
         const zip = URL.createObjectURL(await buildZip(result.clips));
         objectUrls.push(zip);
-        const name = `replays-${currentSlug()}-${el.date.value}-${el.hour.value}.zip`;
+        const name = `replays-${currentField()?.slug}-${el.date.value}-${el.hour.value}.zip`;
         downloadLink(zip, name, "").click();
         zipButton.disabled = false;
       });
@@ -317,11 +315,9 @@ async function generate(): Promise<void> {
 }
 
 el.field.addEventListener("change", () => {
-  el.slugLabel.hidden = el.field.value !== OTHER;
   applyDefaultSwap();
   void loadDay();
 });
-el.slug.addEventListener("change", () => void loadDay());
 el.date.addEventListener("change", () => void loadDay());
 el.hour.addEventListener("change", showPlays);
 el.checkAll.addEventListener("change", () => {

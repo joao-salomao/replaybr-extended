@@ -112,3 +112,15 @@ export function resolveField(slug: string): Field | null {
 
   return { slug, label: slug, defaultSwap: false };
 }
+
+/**
+ * Turns the text of the court search box into a field: a label picked from
+ * the list (case and spaces aside) or, for courts the list doesn't know, a
+ * slug typed as is. Anything else is no field yet.
+ */
+export function fieldFromInput(text: string, fields: Field[]): Field | null {
+  const typed = text.trim();
+  if (!typed) return null;
+  const label = typed.toLowerCase();
+  return fields.find((field) => field.label.toLowerCase() === label) ?? resolveField(typed);
+}

@@ -30,7 +30,7 @@ Se aparecer a mensagem do Cloudflare, abra `www.replaybr.com.br` nessa mesma jan
 
 ### Quadras
 
-A lista vem do próprio site: a extensão lê o mapa `humanReadableFieldNameMapping` do JavaScript da página e tira as quadras que o site marca como inativas. Se o site mudar e a leitura falhar, a extensão usa a lista salva em `src/fields.ts` e avisa. A opção **Outra quadra…** aceita qualquer slug (o `fieldName` da URL do site).
+A lista vem do próprio site: a extensão lê o mapa `humanReadableFieldNameMapping` do JavaScript da página e tira as quadras que o site marca como inativas. Se o site mudar e a leitura falhar, a extensão usa a lista salva em `src/fields.ts` e avisa. O campo **Quadra** filtra a lista enquanto você digita, e também aceita um slug digitado direto (o `fieldName` da URL do site), para quadras fora da lista.
 
 ### Câmera única
 

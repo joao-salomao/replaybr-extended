@@ -16,11 +16,14 @@
         <div class="row">
           <label>
             Quadra
-            <select id="field"></select>
-          </label>
-          <label id="slug-label" hidden>
-            Slug
-            <input id="slug" type="text" placeholder="ex: global-society" />
+            <input
+              id="field"
+              type="search"
+              list="field-options"
+              placeholder="Buscar quadra ou digitar o slug"
+              autocomplete="off"
+            />
+            <datalist id="field-options"></datalist>
           </label>
         </div>
         <div class="row">
