@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { FIELDS, fieldFromInput, resolveField } from "./fields.ts";
+import { FIELDS, resolveField } from "./fields.ts";
 
 describe("FIELDS", () => {
   test("lists the 77 active fields from the official site", () => {
@@ -54,33 +54,5 @@ describe("resolveField", () => {
     ["four--play"],
   ])("rejects invalid slug %p", (slug) => {
     expect(resolveField(slug)).toBeNull();
-  });
-});
-
-describe("fieldFromInput", () => {
-  const fields = [
-    { slug: "four-play-3", label: "Four Play - Quadra 3", defaultSwap: true },
-    { slug: "olaria", label: "Olaria", defaultSwap: false },
-  ];
-
-  test("a picked label resolves to its field", () => {
-    expect(fieldFromInput("Four Play - Quadra 3", fields)?.slug).toBe("four-play-3");
-  });
-
-  test("ignores case and surrounding spaces", () => {
-    expect(fieldFromInput("  olaria ", fields)?.slug).toBe("olaria");
-  });
-
-  test("a typed slug of a field outside the list still works", () => {
-    expect(fieldFromInput("campo-novo", fields)).toEqual({
-      slug: "campo-novo",
-      label: "campo-novo",
-      defaultSwap: false,
-    });
-  });
-
-  test("partial text that is neither a label nor a valid slug is no field", () => {
-    expect(fieldFromInput("Four Pl", fields)).toBeNull();
-    expect(fieldFromInput("", fields)).toBeNull();
   });
 });

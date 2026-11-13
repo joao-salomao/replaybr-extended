@@ -68,7 +68,8 @@ h2 {
   }
 }
 
-label {
+label,
+.field-label {
   display: grid;
   gap: 0.3rem;
   font-size: 0.85rem;
@@ -77,8 +78,7 @@ label {
 
 select,
 input[type="date"],
-input[type="text"],
-input[type="search"] {
+input[type="text"] {
   width: 100%;
   padding: 0.6rem;
   background: var(--background);
@@ -260,4 +260,95 @@ button:disabled {
   width: 100%;
   border-radius: 8px;
   background: #000;
+}
+
+/* Court select with a filter, in the spirit of PrimeVue's Select. */
+.select {
+  position: relative;
+}
+
+.select-trigger {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 0.6rem;
+  background: var(--background);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 1rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.select-trigger::after {
+  content: "▾";
+  color: var(--muted);
+  margin-left: 0.5rem;
+}
+
+.select-trigger:focus-visible,
+.select-trigger[aria-expanded="true"] {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.select-label.placeholder {
+  color: var(--muted);
+}
+
+.select-panel {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  padding: 0.5rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 40%);
+}
+
+.select-panel[hidden] {
+  display: none;
+}
+
+.select-filter {
+  margin-bottom: 0.4rem;
+}
+
+.select-filter:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.select-panel ul {
+  max-height: 16rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.select-panel li {
+  padding: 0.5rem 0.6rem;
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.select-panel li.active {
+  background: var(--border);
+}
+
+.select-panel li[aria-selected="true"] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.select-panel li.select-empty {
+  color: var(--muted);
+  cursor: default;
 }

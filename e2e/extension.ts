@@ -71,18 +71,24 @@ try {
   await page.goto(`chrome-extension://${extensionId}/app.html`);
 
   // The field list came from the (fixture) site, without the inactive one.
-  await page.waitForSelector('#field-options option[value="Four Play - Quadra 3"]', {
-    state: "attached",
-  });
-  const options = await page.$$eval("#field-options option", (els) =>
-    els.map((o) => (o as HTMLOptionElement).value),
+  // A PrimeVue-style select: the trigger opens a panel with a filter on top.
+  await page.waitForSelector("#field .select-trigger:not([disabled])");
+  await page.click("#field .select-trigger");
+  const options = await page.$$eval('#field [role="option"]', (els) =>
+    els.map((o) => o.textContent),
   );
   assert.deepEqual(options, ["Four Play - Quadra 3", "Olaria"]);
   assert.equal(await page.isVisible("#selection-notice"), false);
 
-  // The court is searched by name, not scrolled to.
-  await page.fill("#field", "Four Play - Quadra 3");
-  await page.dispatchEvent("#field", "change");
+  // A slug the list doesn't know is offered as is.
+  await page.fill("#field .select-filter", "campo-novo");
+  assert.equal(await page.textContent('#field [role="option"]'), "Usar slug: campo-novo");
+
+  // The court is searched by name, not scrolled to; Enter picks the match.
+  await page.fill("#field .select-filter", "four 3");
+  await page.keyboard.press("Enter");
+  assert.equal(await page.isVisible("#field .select-panel"), false);
+  assert.equal(await page.textContent("#field .select-label"), "Four Play - Quadra 3");
   await page.fill("#date", DATE);
   await page.dispatchEvent("#date", "change");
   await page.waitForSelector("#hour:not([disabled])");

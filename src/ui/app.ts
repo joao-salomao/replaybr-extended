@@ -2,18 +2,17 @@ import { fetchReplaysForDate, groupReplaysByHour, type HourGroup, type Replay } 
 import { localDate } from "../dates.ts";
 import { downloadReplayPairs } from "../download.ts";
 import { createFfmpegEncoder, type FfmpegLike } from "../encoder.ts";
-import { fieldFromInput, type Field } from "../fields.ts";
+import { resolveField, type Field } from "../fields.ts";
 import { loadFields } from "../fieldsExtract.ts";
 import { probeDimensions } from "../mp4.ts";
 import { renderReplays, type Clip, type RenderProgress } from "../render.ts";
 import { buildZip } from "../zip.ts";
 import { loadFfmpeg } from "./loadFfmpeg.ts";
+import { createSelect } from "./select.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const el = {
-  field: $<HTMLInputElement>("field"),
-  fieldOptions: $<HTMLDataListElement>("field-options"),
   date: $<HTMLInputElement>("date"),
   hour: $<HTMLSelectElement>("hour"),
   selectionNotice: $("selection-notice"),
@@ -44,13 +43,29 @@ let ffmpeg: Promise<FfmpegLike> | null = null;
 // Object URLs of the last job's clips, revoked when a new job starts.
 let objectUrls: string[] = [];
 
-// The court search box and the date input both trigger loadDay(),
+// The court select and the date input both trigger loadDay(),
 // so a second request can start before the first one answers. Each call gets
 // a sequence number; a call whose number is no longer the latest must not
 // touch the UI, or a slow stale answer would clobber a fresh one.
 let loadDaySequence = 0;
 
-const currentField = () => fieldFromInput(el.field.value, fields);
+const fieldSelect = createSelect($("field"), {
+  placeholder: "Escolha a quadra",
+  filterPlaceholder: "Buscar quadra ou digitar o slug",
+  emptyMessage: "Nenhuma quadra encontrada",
+  // Courts the list doesn't know stay reachable by their slug.
+  freeValue: (text) => {
+    const field = resolveField(text);
+    return field && text === field.slug ? { value: field.slug, label: `Usar slug: ${field.slug}` } : null;
+  },
+  onChange: () => {
+    applyDefaultSwap();
+    void loadDay();
+  },
+});
+
+const currentField = () =>
+  fields.find((f) => f.slug === fieldSelect.value) ?? resolveField(fieldSelect.value);
 
 const notice = (message: string) => {
   el.selectionNotice.textContent = message;
@@ -63,8 +78,7 @@ async function setUpFields(): Promise<void> {
   const loaded = await loadFields();
   fields = loaded.fields;
 
-  // A <datalist> filters as the user types: no scrolling through ~80 courts.
-  for (const field of fields) el.fieldOptions.append(new Option(field.label, field.label));
+  fieldSelect.setOptions(fields.map((field) => ({ value: field.slug, label: field.label })));
   el.date.value = localDate(new Date());
 
   if (!loaded.fromSite) notice("Lista de quadras do site indisponível. Usando a lista salva.");
@@ -314,10 +328,6 @@ async function generate(): Promise<void> {
   }
 }
 
-el.field.addEventListener("change", () => {
-  applyDefaultSwap();
-  void loadDay();
-});
 el.date.addEventListener("change", () => void loadDay());
 el.hour.addEventListener("change", showPlays);
 el.checkAll.addEventListener("change", () => {
