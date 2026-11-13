@@ -13,8 +13,8 @@ export interface Dimensions {
   height: number;
 }
 
-/** A file handle opened lazily by Bun; only the byte ranges we need are read. */
-type Mp4File = ReturnType<typeof Bun.file>;
+/** Only the byte ranges we need are read from it. */
+type Mp4File = Blob;
 
 /** Internal parse failure. Callers translate this into a user-facing message. */
 class Mp4ParseError extends Error {}
@@ -232,32 +232,30 @@ async function readCodedDimensions(
 }
 
 /** Reads width and height from the video, used to normalize every clip. */
-export async function probeDimensions(file: string): Promise<Dimensions> {
+export async function probeDimensions(file: Blob): Promise<Dimensions> {
   try {
-    const bunFile = Bun.file(file);
-    const moov = await findMoov(bunFile);
-    const mdia = await findVideoTrackMdia(bunFile, moov);
-    return await readCodedDimensions(bunFile, mdia);
+    const moov = await findMoov(file);
+    const mdia = await findVideoTrackMdia(file, moov);
+    return await readCodedDimensions(file, mdia);
   } catch (error) {
     if (error instanceof NoVideoTrackError) {
       throw new Error(
-        `Não foi possível ler as dimensões de ${file}: o arquivo não tem trilha de vídeo`,
+        "Não foi possível ler as dimensões do vídeo: o arquivo não tem trilha de vídeo",
       );
     }
     throw new Error(
-      `Não foi possível ler as dimensões de ${file}: arquivo MP4 inválido ou corrompido`,
+      "Não foi possível ler as dimensões do vídeo: arquivo MP4 inválido ou corrompido",
     );
   }
 }
 
-export async function probeDuration(file: string): Promise<number> {
+export async function probeDuration(file: Blob): Promise<number> {
   try {
-    const bunFile = Bun.file(file);
-    const moov = await findMoov(bunFile);
-    return await readMvhdDuration(bunFile, moov);
+    const moov = await findMoov(file);
+    return await readMvhdDuration(file, moov);
   } catch {
     throw new Error(
-      `Não foi possível ler a duração de ${file}: arquivo MP4 inválido ou corrompido`,
+      "Não foi possível ler a duração do vídeo: arquivo MP4 inválido ou corrompido",
     );
   }
 }
