@@ -59,7 +59,11 @@ export function createFfmpegEncoder(ffmpeg: FfmpegLike): ClipEncoder {
 
       const inputs = sources.map((_, i) => `in${i}.mp4`);
       try {
-        for (const [i, name] of inputs.entries()) await ffmpeg.writeFile(name, sources[i]!);
+        for (const [i, name] of inputs.entries()) {
+          // ffmpeg.wasm transfers the buffer to its worker, detaching it:
+          // hand it a copy so the caller's bytes stay usable.
+          await ffmpeg.writeFile(name, sources[i]!.slice());
+        }
         const code = await ffmpeg.exec([
           "-y", "-loglevel", "error",
           ...inputs.flatMap((name) => ["-i", name]),

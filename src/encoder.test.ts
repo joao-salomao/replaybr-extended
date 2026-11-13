@@ -81,6 +81,25 @@ describe("createFfmpegEncoder", () => {
     for (const path of written) expect(deleted).toContain(path);
   });
 
+  test("leaves the caller's bytes usable even though ffmpeg.wasm transfers what it is given", async () => {
+    const { ffmpeg } = fakeFfmpeg();
+    const sizes: number[] = [];
+    // ffmpeg.wasm posts the data to its worker with the buffer in the
+    // transfer list, which detaches the array it received.
+    ffmpeg.writeFile = async (_path, data) => {
+      const bytes = data as Uint8Array<ArrayBuffer>;
+      sizes.push(bytes.byteLength);
+      structuredClone(bytes, { transfer: [bytes.buffer] });
+      return true;
+    };
+    const encoder = createFfmpegEncoder(ffmpeg);
+
+    await encoder.render(options);
+    await encoder.render(options);
+
+    expect(sizes).toEqual([1, 1, 1, 1]);
+  });
+
   test("a non-zero exit code rejects", async () => {
     const { ffmpeg } = fakeFfmpeg();
     ffmpeg.exec = async () => 1;
