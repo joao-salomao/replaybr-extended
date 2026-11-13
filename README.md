@@ -1,4 +1,4 @@
-# replaybr-extended
+# ReplayBR extended
 
 A Chrome extension that downloads the [ReplayBR](https://www.replaybr.com.br/replay?fieldName=four-play-3) replays for a date and hour and makes **one video per play**, with **both cameras side by side**, playing at the same time.
 
