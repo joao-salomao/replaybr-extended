@@ -61,7 +61,7 @@ src/fieldsExtract.ts lista de quadras lida do site
 src/download.ts      download paralelo para a memória, com retry
 src/encoder.ts       filtro lado a lado + ffmpeg.wasm
 src/mp4.ts           dimensões via árvore de caixas MP4
-src/render.ts        pipeline download → render, um lance por vez
+src/render.ts        pipeline download → render, vários lances em paralelo
 src/zip.ts           o .zip de todos os clipes
 e2e/                 teste ponta a ponta e fixtures
 ```

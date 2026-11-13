@@ -47,13 +47,15 @@ function spy(order: number[], failures: string[] = []): Spy {
       return { pairs, failed: [] };
     },
     probeDimensions: async () => ({ width: 704, height: 560 }),
-    encoder: {
-      render: async ({ sources, columns }: EncodeOptions) => {
-        const labels = sources.map(text);
-        rendered.push({ sources: labels, columns });
-        return bytes(`out:${labels.join("+")}`);
+    encoders: [
+      {
+        render: async ({ sources, columns }: EncodeOptions) => {
+          const labels = sources.map(text);
+          rendered.push({ sources: labels, columns });
+          return bytes(`out:${labels.join("+")}`);
+        },
       },
-    },
+    ],
   };
 
   return { deps, rendered };
@@ -162,13 +164,15 @@ describe("renderReplays", () => {
 
   test("a play that failed to render lands in failed without stopping the rest", async () => {
     const { deps } = spy([0, 1, 2]);
-    const original = deps.encoder.render;
-    deps.encoder = {
-      render: async (options) => {
-        if (text(options.sources[0]!) === "cam1-1") throw new Error("ffmpeg broke");
-        return original(options);
+    const original = deps.encoders[0]!.render;
+    deps.encoders = [
+      {
+        render: async (options) => {
+          if (text(options.sources[0]!) === "cam1-1") throw new Error("ffmpeg broke");
+          return original(options);
+        },
       },
-    };
+    ];
 
     const result = await renderReplays(request(THREE, deps));
 
@@ -198,33 +202,58 @@ describe("renderReplays", () => {
     expect(seen.map((c) => c.index)).toEqual([2, 0, 1]);
   });
 
-  test("never runs two encodes at once", async () => {
+  test("runs one encode per encoder at a time, never more", async () => {
     const { deps } = spy([0, 1, 2]);
     let running = 0;
     let peak = 0;
-    deps.encoder = {
+    const perEncoder = [0, 0];
+    const perEncoderPeak = [0, 0];
+    deps.encoders = [0, 1].map((id) => ({
       render: async () => {
         peak = Math.max(peak, ++running);
+        perEncoderPeak[id] = Math.max(perEncoderPeak[id]!, ++perEncoder[id]!);
         await new Promise((resolve) => setTimeout(resolve, 5));
+        perEncoder[id]!--;
         running--;
         return bytes("out");
       },
+    }));
+
+    const result = await renderReplays(request(THREE, deps));
+
+    expect(result.clips).toHaveLength(3);
+    // Two encoders, so two plays render side by side...
+    expect(peak).toBe(2);
+    // ...but one ffmpeg.wasm instance never takes two plays at once.
+    expect(perEncoderPeak).toEqual([1, 1]);
+  });
+
+  test("probes the hour's dimensions once, even with parallel encodes", async () => {
+    const { deps } = spy([0, 1, 2]);
+    let probes = 0;
+    deps.probeDimensions = async () => {
+      probes++;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return { width: 704, height: 560 };
     };
+    deps.encoders = [deps.encoders[0]!, deps.encoders[0]!, deps.encoders[0]!];
 
     await renderReplays(request(THREE, deps));
 
-    expect(peak).toBe(1);
+    expect(probes).toBe(1);
   });
 
   test("after the encoder crashes, the remaining plays fail without encoding", async () => {
     const { deps } = spy([0, 1, 2]);
     let calls = 0;
-    deps.encoder = {
-      render: async () => {
-        calls++;
-        throw new EncoderCrashedError("RuntimeError: Aborted(OOM)");
+    deps.encoders = [
+      {
+        render: async () => {
+          calls++;
+          throw new EncoderCrashedError("RuntimeError: Aborted(OOM)");
+        },
       },
-    };
+    ];
 
     const result = await renderReplays(request(THREE, deps));
 

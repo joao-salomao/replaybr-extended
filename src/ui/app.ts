@@ -39,7 +39,11 @@ let fields: Field[] = [];
 let hours: HourGroup[] = [];
 let running = false;
 // Loaded on the first "Gerar" and reused: the wasm core is ~30 MB.
-let ffmpeg: Promise<FfmpegLike> | null = null;
+let ffmpeg: Promise<FfmpegLike[]> | null = null;
+// Each ffmpeg.wasm instance is single-threaded: one per two cores, up to 3,
+// renders plays side by side without starving the rest of the machine (each
+// instance also holds its own wasm memory).
+const ENCODERS = Math.max(1, Math.min(3, Math.floor((navigator.hardwareConcurrency || 2) / 2)));
 // Object URLs of the last job's clips, revoked when a new job starts.
 let objectUrls: string[] = [];
 
@@ -231,6 +235,7 @@ function showClip(clip: Clip): void {
 
   const wrapper = document.createElement("div");
   wrapper.className = "clip";
+  wrapper.dataset.index = String(clip.index);
 
   const title = document.createElement("h3");
   title.textContent = clip.timestamp.slice(11);
@@ -245,7 +250,11 @@ function showClip(clip: Clip): void {
   actions.append(downloadLink(url, clip.name, "Baixar"));
 
   wrapper.append(title, video, actions);
-  el.clips.append(wrapper);
+  // Parallel encodes finish in any order: slot each clip in chronologically.
+  const next = [...el.clips.children].find(
+    (other) => Number((other as HTMLElement).dataset.index) > clip.index,
+  );
+  el.clips.insertBefore(wrapper, next ?? null);
 }
 
 async function generate(): Promise<void> {
@@ -265,9 +274,10 @@ async function generate(): Promise<void> {
   el.progress.textContent = "Carregando o ffmpeg…";
 
   try {
-    let encoder;
+    let encoders;
     try {
-      encoder = createFfmpegEncoder(await (ffmpeg ??= loadFfmpeg()));
+      const pool = (ffmpeg ??= Promise.all(Array.from({ length: ENCODERS }, loadFfmpeg)));
+      encoders = (await pool).map(createFfmpegEncoder);
     } catch (error) {
       ffmpeg = null;
       el.progress.textContent = `Não foi possível carregar o ffmpeg: ${message(error)}`;
@@ -281,18 +291,19 @@ async function generate(): Promise<void> {
       fps: 30,
       crf: 20,
       preset: "veryfast",
-      concurrency: 4,
+      // Six cameras downloading keep three encoders fed.
+      concurrency: 6,
       onProgress: ({ phase, done, total }) => {
         el.progress.textContent = `${PHASES[phase]} ${done}/${total}`;
       },
       onClip: showClip,
-      deps: { downloadReplayPairs, probeDimensions, encoder },
+      deps: { downloadReplayPairs, probeDimensions, encoders },
     });
 
     el.progress.textContent = `Pronto — ${result.clips.length} vídeo(s).`;
     if (result.crashed) {
       // The wasm module is dead: drop it so the next "Gerar" loads a fresh one.
-      (await ffmpeg)?.terminate();
+      for (const instance of (await ffmpeg) ?? []) instance.terminate();
       ffmpeg = null;
       el.progress.textContent +=
         " O ffmpeg travou, provavelmente sem memória. Gere os lances que faltaram de novo.";

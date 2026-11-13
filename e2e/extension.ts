@@ -106,6 +106,11 @@ try {
   const seconds = ((performance.now() - started) / 1000).toFixed(1);
 
   assert.equal(await page.textContent("#progress"), "Pronto — 2 vídeo(s).");
+  // Parallel encodes finish in any order; the list stays chronological.
+  assert.deepEqual(await page.$$eval(".clip h3", (h) => h.map((e) => e.textContent)), [
+    "20:34:25",
+    "20:48:28",
+  ]);
   assert.equal(await page.isVisible("#failures"), false);
 
   // Both clips share the two-column frame: 2 x 320 by 240.
@@ -124,7 +129,9 @@ try {
   assert.deepEqual(sizes, ["640x240", "640x240"]);
 
   // camera1 is red and camera2 blue; with swap on, camera2 goes on the left.
-  const left = await page.$eval(".clip video", (video) => {
+  // Clips show up in completion order, so pick the two-camera play by its time.
+  const twoCameras = page.locator(".clip", { hasText: "20:34:25" }).locator("video");
+  const left = await twoCameras.evaluate((video) => {
     const v = video as HTMLVideoElement;
     return new Promise<number[]>((done) => {
       v.addEventListener(
