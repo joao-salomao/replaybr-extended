@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Replay } from "./api.ts";
+import { setCloudflareClearance, type Replay } from "./api.ts";
 import { downloadReplayPairs, type ReplayPair } from "./download.ts";
 
 const replay = (timestamp: string, cameras: 1 | 2): Replay => ({
@@ -38,6 +38,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   globalThis.fetch = originalFetch;
+  setCloudflareClearance(undefined);
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -104,5 +105,28 @@ describe("downloadReplayPairs", () => {
 
     expect(delivered).toEqual([]);
     expect(outcome.failed).toHaveLength(1);
+  });
+
+  test("sends the cf_clearance cookie when downloading from ReplayBR", async () => {
+    let headers: Headers | undefined;
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      headers = new Headers(init?.headers);
+      return new Response(new Uint8Array([1, 2, 3, 4]));
+    }) as typeof fetch;
+    setCloudflareClearance({ cfClearance: "abc123", userAgent: "Mozilla/5.0 Test" });
+
+    await downloadReplayPairs(
+      [
+        {
+          timestamp: "2026-11-12T20:41:02",
+          camera1_url:
+            "https://replays.replaybr.com.br/video/four-play-3/2026-11-12/20/2026-11-12T20:41:02/camera1.mp4",
+        },
+      ],
+      dir,
+    );
+
+    expect(headers?.get("cookie")).toBe("cf_clearance=abc123");
+    expect(headers?.get("user-agent")).toBe("Mozilla/5.0 Test");
   });
 });

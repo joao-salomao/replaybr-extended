@@ -3,6 +3,7 @@ import { basename } from "node:path";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import {
+  CloudflareBlockedError,
   groupReplaysByHour,
   normalizeHour,
   ReplayBrUnavailableError,
@@ -299,6 +300,16 @@ export function createApp({ fetchReplays, jobs, publicDir }: RouteDeps): Hono {
   // gets called out explicitly.
   app.onError((err, c) => {
     console.error("✗ Erro não tratado numa rota:", err);
+
+    if (err instanceof CloudflareBlockedError) {
+      return c.json(
+        {
+          error:
+            "O Cloudflare bloqueou o acesso à API do ReplayBR. Reinicie o servidor com um cf_clearance novo.",
+        },
+        502,
+      );
+    }
 
     if (err instanceof ReplayBrUnavailableError) {
       return c.json(

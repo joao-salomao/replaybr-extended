@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import JSZip from "jszip";
-import { ReplayBrUnavailableError, type Replay } from "../api.ts";
+import { CloudflareBlockedError, ReplayBrUnavailableError, type Replay } from "../api.ts";
 import type { RenderRequest, RenderResult } from "../render.ts";
 import { JobStore } from "./jobs.ts";
 import { createApp } from "./routes.ts";
@@ -101,10 +101,9 @@ describe("GET /api/fields", () => {
     const res = await app.request("/api/fields");
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual([
-      { slug: "placar-society", label: "Placar Society", defaultSwap: false },
-      { slug: "four-play-3", label: "Four Play - Quadra 3", defaultSwap: true },
-    ]);
+    const body = (await res.json()) as unknown[];
+    expect(body).toHaveLength(77);
+    expect(body).toContainEqual({ slug: "four-play-3", label: "Four Play - Quadra 3", defaultSwap: true });
   });
 });
 
@@ -498,6 +497,25 @@ describe("app.onError", () => {
     expect(res.headers.get("content-type")).toContain("application/json");
     const body = (await res.json()) as { error: string };
     expect(body.error).toContain("ReplayBR");
+  });
+
+  test("a Cloudflare block tells the user to restart with a new cf_clearance", async () => {
+    const blockedApp = createApp({
+      fetchReplays: async () => {
+        throw new CloudflareBlockedError("403 challenge");
+      },
+      jobs: store,
+      publicDir: "public",
+    });
+
+    const res = await blockedApp.request(
+      "/api/replays?field=four-play-3&date=2026-08-13",
+    );
+
+    expect(res.status).toBe(502);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("Cloudflare");
+    expect(body.error).toContain("cf_clearance");
   });
 
   test("an unexpected error still becomes Portuguese JSON, not Hono's default 500", async () => {

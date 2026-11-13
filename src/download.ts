@@ -1,6 +1,6 @@
 import { stat, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { Replay } from "./api.ts";
+import { replayBrHeaders, type Replay } from "./api.ts";
 
 /**
  * Ceiling per download attempt of a file. Bun's `fetch` has no default
@@ -104,7 +104,10 @@ async function downloadFile(
   const existing = await fileSize(destination);
   if (existing > 0) return { skipped: true, bytes: existing };
 
-  const res = await fetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
+  const res = await fetch(url, {
+    signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+    headers: replayBrHeaders(url),
+  });
   if (!res.ok) {
     throw new Error(`Download falhou (${res.status}) para ${url}`);
   }
