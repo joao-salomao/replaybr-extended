@@ -55,13 +55,6 @@ bun run e2e         # build + a extensão no Chromium do Playwright
 
 O `bun run e2e` precisa do Chromium do Playwright uma vez: `bunx playwright install chromium`. Ele carrega o `dist/` e responde às chamadas aos dois domínios do ReplayBR com as fixtures de `e2e/`, então não toca o site real.
 
-### Publicar uma versão
-
-1. Suba o `version` do `package.json` (o manifesto lê a mesma versão) e faça o merge no `main`.
-2. Em **Actions > Release > Run workflow**, rode no `main`.
-
-O workflow roda o typecheck e os testes, gera o `dist/`, publica o release `v<versão>` com o `.zip` anexado e para se essa tag já existir.
-
 ```
 manifest.config.ts   manifesto MV3 (CRXJS)
 app.html             página do app
@@ -77,3 +70,10 @@ src/render.ts        pipeline download → render, vários lances em paralelo
 src/zip.ts           o .zip de todos os clipes
 e2e/                 teste ponta a ponta e fixtures
 ```
+
+## Publicar uma versão
+
+1. Suba o `version` do `package.json` (o manifesto lê a mesma versão) e faça o merge no `main`.
+2. Em **Actions > Release > Run workflow**, rode no `main`.
+
+O workflow roda o typecheck e os testes, gera o `dist/`, publica o release `v<versão>` com o `.zip` anexado e para se essa tag já existir.
