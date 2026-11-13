@@ -6,6 +6,12 @@ export interface Field {
 }
 
 /**
+ * Fields whose API camera numbering doesn't match the physical position on
+ * site, so they come out swapped unless flipped.
+ */
+export const SWAP_BY_DEFAULT: ReadonlySet<string> = new Set(["four-play-3"]);
+
+/**
  * Active fields from the official site: `humanReadableFieldNameMapping` in
  * the `www.replaybr.com.br` bundle, minus the slugs its `isFieldInactive`
  * lists. Extracted on 2026-11-13. Sorted by label for the dropdown.
