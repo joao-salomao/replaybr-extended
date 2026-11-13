@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Shared by CI and Release: Bun, install, typecheck, unit tests.
+      # Shared by CI and Release: Bun, install, typecheck, unit tests, e2e.
       - uses: ./.github/actions/verify
         with:
           bun-version: ${{ vars.BUN_VERSION }}

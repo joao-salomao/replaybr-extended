@@ -78,6 +78,6 @@ e2e/                 end-to-end test and fixtures
 1. Bump `version` in `package.json` (the manifest reads the same version) and merge into `main`.
 2. In **Actions > Release > Run workflow**, run it on `main`.
 
-The workflow runs the typecheck and the tests, builds `dist/`, publishes the `v<version>` release with the `.zip` attached, and stops if that tag already exists.
+The workflow runs the typecheck, the unit tests and the e2e, builds `dist/`, publishes the `v<version>` release with the `.zip` attached, and stops if that tag already exists.
 
 CI and the release install Bun at the version in the `BUN_VERSION` repository variable (Settings > Secrets and variables > Actions > Variables). Keep it the same as your local version (`bun --version`).

@@ -1,5 +1,5 @@
 name: Verify
-description: Sets up Bun, installs dependencies, typechecks and runs the unit tests.
+description: Sets up Bun, installs dependencies, typechecks, runs the unit tests and the e2e.
 
 inputs:
   bun-version:
@@ -20,4 +20,11 @@ runs:
       shell: bash
 
     - run: bun test
+      shell: bash
+
+    - run: bunx playwright install --with-deps chromium
+      shell: bash
+
+    # Builds the extension and drives it in Chromium against fixtures.
+    - run: bun run e2e
       shell: bash
