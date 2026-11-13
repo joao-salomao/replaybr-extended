@@ -2,11 +2,27 @@ import { describe, expect, test } from "bun:test";
 import { FIELDS, resolveField } from "./fields.ts";
 
 describe("FIELDS", () => {
-  test("exposes the two supported fields, with their official labels", () => {
-    expect(FIELDS.map((f) => [f.slug, f.label])).toEqual([
-      ["placar-society", "Placar Society"],
-      ["four-play-3", "Four Play - Quadra 3"],
-    ]);
+  test("lists the 77 active fields from the official site", () => {
+    expect(FIELDS).toHaveLength(77);
+    expect(FIELDS.find((f) => f.slug === "four-play-1")?.label).toBe("Four Play - Quadra 1");
+  });
+
+  test("leaves out the fields the site marks inactive", () => {
+    const slugs = FIELDS.map((f) => f.slug);
+    for (const inactive of ["arena-beach-prime-1", "arena-beach-prime-2", "golacos-society-1", "golacos-society-2"]) {
+      expect(slugs).not.toContain(inactive);
+    }
+  });
+
+  test("is sorted by label, for the dropdown", () => {
+    const labels = FIELDS.map((f) => f.label);
+    expect(labels).toEqual([...labels].sort((a, b) => a.localeCompare(b, "pt-BR")));
+  });
+
+  test("every slug is unique and valid", () => {
+    const slugs = FIELDS.map((f) => f.slug);
+    expect(new Set(slugs).size).toBe(slugs.length);
+    for (const slug of slugs) expect(resolveField(slug)?.slug).toBe(slug);
   });
 });
 
@@ -21,9 +37,9 @@ describe("resolveField", () => {
   });
 
   test("unknown but valid slug becomes a standalone field", () => {
-    expect(resolveField("global-society")).toEqual({
-      slug: "global-society",
-      label: "global-society",
+    expect(resolveField("campo-novo")).toEqual({
+      slug: "campo-novo",
+      label: "campo-novo",
       defaultSwap: false,
     });
   });

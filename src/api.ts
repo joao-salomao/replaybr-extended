@@ -22,11 +22,24 @@ export interface HourGroup {
 
 /**
  * The ReplayBR API didn't respond: down, DNS failed, timeout, or it
- * responded with an error status. A dedicated class lets whoever handles the
- * error (the HTTP route) tell this cause — by far the most likely one —
- * apart from an arbitrary bug, without having to guess from the message.
+ * responded with an error status. Its message is written for the user: the
+ * app shows it as is.
  */
 export class ReplayBrUnavailableError extends Error {}
+
+/**
+ * Cloudflare answered with its bot check ("Just a moment...") instead of the
+ * API. Retrying does not help: the user has to pass the check on the site.
+ */
+export class CloudflareBlockedError extends ReplayBrUnavailableError {}
+
+/** Cloudflare answered with its "Just a moment..." check instead of the content. */
+export function isCloudflareChallenge(res: Response): boolean {
+  return res.status === 403 && res.headers.get("cf-mitigated") === "challenge";
+}
+
+export const CLOUDFLARE_MESSAGE =
+  "O Cloudflare bloqueou o acesso. Abra www.replaybr.com.br nesta janela para liberar e tente de novo.";
 
 /** Fetches every replay for a field on a given date (YYYY-MM-DD). */
 export async function fetchReplaysForDate(
@@ -39,12 +52,17 @@ export async function fetchReplaysForDate(
 
   let res: Response;
   try {
-    res = await fetch(url, { signal: AbortSignal.timeout(API_TIMEOUT_MS) });
+    res = await fetch(url, {
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
+      // The browser's ReplayBR session, Cloudflare clearance included.
+      credentials: "include",
+    });
   } catch (error) {
     throw new ReplayBrUnavailableError(
       `Falha ao falar com a API do ReplayBR: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+  if (isCloudflareChallenge(res)) throw new CloudflareBlockedError(CLOUDFLARE_MESSAGE);
   if (!res.ok) {
     throw new ReplayBrUnavailableError(
       `API respondeu ${res.status} ${res.statusText} para ${url}`,
@@ -78,16 +96,4 @@ export function groupReplaysByHour(replays: Replay[]): HourGroup[] {
   return [...byHour.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([hour, list]) => ({ hour, label: `${hour}:00`, replays: list }));
-}
-
-/** Accepts "20", "20:30", "2030", or "20h30" and returns the hour ("20"). */
-export function normalizeHour(input: string): string | null {
-  const match = input.trim().match(/^(\d{1,2})(?:[:h.]?(\d{2}))?$/);
-  if (!match?.[1]) return null;
-
-  const hour = Number(match[1]);
-  const minute = match[2] === undefined ? 0 : Number(match[2]);
-  if (hour > 23 || minute > 59) return null;
-
-  return String(hour).padStart(2, "0");
 }

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  CloudflareBlockedError,
   fetchReplaysForDate,
   groupReplaysByHour,
-  normalizeHour,
   ReplayBrUnavailableError,
   type Replay,
 } from "./api.ts";
@@ -65,31 +65,6 @@ describe("groupReplaysByHour", () => {
   test("empty list returns no groups", () => {
     expect(groupReplaysByHour([])).toEqual([]);
   });
-});
-
-describe("normalizeHour", () => {
-  test.each([
-    ["20", "20"],
-    ["20:00", "20"],
-    ["20:30", "20"],
-    ["2030", "20"],
-    ["20h30", "20"],
-    ["20.30", "20"],
-    ["9", "09"],
-    ["00:15", "00"],
-    // Three digits are read as H + MM: "203" is 2:03.
-    ["203", "02"],
-    [" 20 ", "20"],
-  ])("normalizes %p to %p", (input, expected) => {
-    expect(normalizeHour(input)).toBe(expected);
-  });
-
-  test.each([["24"], ["20:60"], ["abc"], [""], ["-1"], ["20:1"]])(
-    "rejects %p",
-    (input) => {
-      expect(normalizeHour(input)).toBeNull();
-    },
-  );
 });
 
 const originalFetch = globalThis.fetch;
@@ -173,6 +148,48 @@ describe("fetchReplaysForDate", () => {
     );
   });
 
+  test("a Cloudflare challenge throws CloudflareBlockedError", async () => {
+    stubFetch(
+      () =>
+        new Response("<title>Just a moment...</title>", {
+          status: 403,
+          headers: { "cf-mitigated": "challenge" },
+        }),
+    );
+
+    const promise = fetchReplaysForDate("four-play-3", "2026-08-13");
+
+    await expect(promise).rejects.toThrow(CloudflareBlockedError);
+    // Still an "unavailable" error, so callers that only know that class keep working.
+    await expect(promise).rejects.toThrow(ReplayBrUnavailableError);
+  });
+
+  test("a plain 403 without the challenge header is not a Cloudflare block", async () => {
+    stubFetch(() => new Response("nope", { status: 403 }));
+
+    await expect(fetchReplaysForDate("four-play-3", "2026-08-13")).rejects.not.toThrow(
+      CloudflareBlockedError,
+    );
+  });
+
+  test("sends credentials: include", async () => {
+    stubFetch(() => Response.json({ replays: [] }));
+
+    await fetchReplaysForDate("four-play-3", "2026-08-13");
+
+    expect(calls[0]?.init?.credentials).toBe("include");
+  });
+
+  test("the Cloudflare message tells the user to open the site", async () => {
+    stubFetch(
+      () => new Response("", { status: 403, headers: { "cf-mitigated": "challenge" } }),
+    );
+
+    await expect(fetchReplaysForDate("four-play-3", "2026-08-13")).rejects.toThrow(
+      "www.replaybr.com.br",
+    );
+  });
+
   test("passes an abort signal for the timeout", async () => {
     stubFetch(() => Response.json({ replays: [] }));
 
@@ -181,3 +198,4 @@ describe("fetchReplaysForDate", () => {
     expect(calls[0]?.init?.signal).toBeInstanceOf(AbortSignal);
   });
 });
+

@@ -1,25 +1,10 @@
-import { rm } from "node:fs/promises";
 import type { Replay } from "./api.ts";
-import { downloadReplayPairs, type ReplayPair } from "./download.ts";
-import { concatClips, renderClip } from "./ffmpeg.ts";
-import { probeDimensions, probeDuration, type Dimensions } from "./mp4.ts";
-import { Semaphore } from "./semaphore.ts";
-
-/**
- * Caps concurrent ffmpeg encodes across every job on the server, not just
- * within one. `libx264` is already multithreaded, so a single encode
- * saturates a small box — 1 is the conservative choice the project owner
- * asked for, given a 2-vCPU VPS and jobs that must never be rejected.
- */
-const ENCODE_CONCURRENCY = 1;
-
-// Module scope: one instance shared by every job. An instance created per
-// call (e.g. inside `renderReplays`) would give each job its own permit
-// pool, defeating the entire cross-job cap.
-const encodeSemaphore = new Semaphore(ENCODE_CONCURRENCY);
+import type { downloadReplayPairs, ReplayPair } from "./download.ts";
+import { EncoderCrashedError, type ClipEncoder } from "./encoder.ts";
+import type { Dimensions, probeDimensions } from "./mp4.ts";
 
 export interface RenderProgress {
-  phase: "download" | "render" | "concat";
+  phase: "download" | "render";
   done: number;
   total: number;
 }
@@ -28,8 +13,10 @@ export interface Clip {
   /** Chronological position, assigned before any download. */
   index: number;
   timestamp: string;
-  path: string;
+  /** `NN_HH-MM-SS.mp4`, NN being the chronological position. */
+  name: string;
   cameras: 1 | 2;
+  data: Blob;
 }
 
 export interface RenderFailure {
@@ -40,44 +27,29 @@ export interface RenderFailure {
 export interface RenderResult {
   /** In chronological order. */
   clips: Clip[];
-  merged: { path: string; duration: number } | null;
   failed: RenderFailure[];
+  /** The encoder died mid-job: it must be reloaded before the next one. */
+  crashed: boolean;
 }
 
-/** Seam for tests: lets the pipeline run without a real ffmpeg. */
+/** Seam for tests: lets the pipeline run without the network or ffmpeg. */
 export interface RenderDeps {
   downloadReplayPairs: typeof downloadReplayPairs;
   probeDimensions: typeof probeDimensions;
-  renderClip: typeof renderClip;
-  concatClips: typeof concatClips;
-  probeDuration: typeof probeDuration;
-  removePaths: (paths: string[]) => Promise<void>;
+  /** One play at a time per encoder; plays spread across all of them. */
+  encoders: ClipEncoder[];
 }
-
-export const defaultRenderDeps: RenderDeps = {
-  downloadReplayPairs,
-  probeDimensions,
-  renderClip,
-  concatClips,
-  probeDuration,
-  removePaths: async (paths) => {
-    for (const path of paths) await rm(path, { force: true });
-  },
-};
 
 export interface RenderRequest {
   replays: Replay[];
-  rawDir: string;
-  outDir: string;
   swap: boolean;
-  concat: boolean;
   fps: number;
   crf: number;
   preset: string;
   concurrency: number;
   onProgress: (progress: RenderProgress) => void;
   onClip: (clip: Clip) => void;
-  deps?: RenderDeps;
+  deps: RenderDeps;
 }
 
 const message = (error: unknown): string =>
@@ -86,35 +58,26 @@ const message = (error: unknown): string =>
 /**
  * Downloads and renders the plays, one video per play.
  *
- * Each play is rendered as soon as its files finish downloading, while the
- * next ones are still downloading — the first clip is ready in seconds, and
- * its raw files are gone right after, keeping the disk peak low.
- *
- * Rendering is serialized through a promise chain, so a single job never
- * runs two ffmpeg at once and never probes dimensions twice concurrently.
- * On top of that, `encodeSemaphore` caps concurrent encodes across every
- * job on the server to `ENCODE_CONCURRENCY` — otherwise N parallel jobs
- * would still mean N parallel ffmpeg processes fighting over the same CPU.
+ * Each play is rendered as soon as its cameras finish downloading, while the
+ * next ones are still downloading: the first clip is ready in seconds. Plays
+ * queue up and each free encoder takes the next one, so N encoders render N
+ * plays side by side, and no encoder ever holds two (an ffmpeg.wasm instance
+ * reuses the same file names).
  */
 export async function renderReplays({
   replays,
-  rawDir,
-  outDir,
   swap,
-  concat,
   fps,
   crf,
   preset,
   concurrency,
   onProgress,
   onClip,
-  deps = defaultRenderDeps,
+  deps,
 }: RenderRequest): Promise<RenderResult> {
   // The chronological index is fixed here, before any download, so the
   // filename doesn't depend on the order downloads finish in.
-  const sorted = [...replays].sort((a, b) =>
-    a.timestamp.localeCompare(b.timestamp),
-  );
+  const sorted = [...replays].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
   const total = sorted.length;
   // The listing alone tells us if the frame is double: nothing needs downloading.
@@ -122,52 +85,32 @@ export async function renderReplays({
 
   const clips: Clip[] = [];
   const failed: RenderFailure[] = [];
-  let cell: Dimensions | null = null;
+  // Shared promise: parallel encodes still probe the hour's size only once.
+  let cell: Promise<Dimensions> | null = null;
   let rendered = 0;
-  let chain: Promise<void> = Promise.resolve();
+  // Once the encoder dies, the remaining plays fail fast instead of each
+  // feeding a dead module.
+  let crash: EncoderCrashedError | null = null;
 
-  const renderPair = async (pair: ReplayPair): Promise<void> => {
+  const renderPair = async (encoder: ClipEncoder, pair: ReplayPair): Promise<void> => {
+    if (crash) throw crash;
     const first = pair.cameras[0];
     if (!first) return;
 
-    // Every clip in the hour needs to come out the same size, or concat
-    // without re-encoding stops working. The first file sets the measure.
-    const measure = (cell ??= await deps.probeDimensions(first));
+    // Every clip in the hour comes out the same size: the first camera sets it.
+    const measure = await (cell ??= deps.probeDimensions(new Blob([first as Uint8Array<ArrayBuffer>])));
+    const sources = swap ? [...pair.cameras].reverse() : pair.cameras;
+
+    const output = await encoder.render({ sources, cell: measure, columns, fps, crf, preset });
 
     const number = String(pair.index + 1).padStart(2, "0");
     const clock = pair.timestamp.slice(11).replaceAll(":", "-");
-    const path = `${outDir}/${number}_${clock}.mp4`;
-
-    const sources = swap ? [...pair.cameras].reverse() : pair.cameras;
-
-    // Only the encode itself queues on the cross-job cap. Downloads are
-    // I/O-bound and stay fully parallel — gating them here too would slow
-    // every job down for no CPU benefit.
-    const release = await encodeSemaphore.acquire();
-    try {
-      await deps.renderClip({
-        sources,
-        output: path,
-        cell: measure,
-        columns,
-        fps,
-        crf,
-        preset,
-      });
-    } finally {
-      // Must run even when renderClip throws: an escaped failure that skips
-      // this would leak the permit forever, and after enough failures the
-      // server would silently stop rendering — no error, nothing in the
-      // log, just no more clips ever.
-      release();
-    }
-    await deps.removePaths(pair.cameras);
-
     const clip: Clip = {
       index: pair.index,
       timestamp: pair.timestamp,
-      path,
+      name: `${number}_${clock}.mp4`,
       cameras: pair.cameras.length >= 2 ? 2 : 1,
+      data: new Blob([output as Uint8Array<ArrayBuffer>], { type: "video/mp4" }),
     };
     clips.push(clip);
     rendered++;
@@ -175,35 +118,41 @@ export async function renderReplays({
     onProgress({ phase: "render", done: rendered, total });
   };
 
-  await deps.downloadReplayPairs(sorted, rawDir, {
+  const queue: ReplayPair[] = [];
+  const idle = [...deps.encoders];
+  const running: Promise<void>[] = [];
+
+  const run = async (encoder: ClipEncoder, pair: ReplayPair): Promise<void> => {
+    try {
+      await renderPair(encoder, pair);
+    } catch (error) {
+      if (error instanceof EncoderCrashedError) crash = error;
+      failed.push({ timestamp: pair.timestamp, error: message(error) });
+    } finally {
+      idle.push(encoder);
+      dispatch();
+    }
+  };
+
+  // Hands queued plays to free encoders, oldest play first.
+  const dispatch = () => {
+    while (idle.length > 0 && queue.length > 0) {
+      running.push(run(idle.shift()!, queue.shift()!));
+    }
+  };
+
+  await deps.downloadReplayPairs(sorted, {
     concurrency,
-    onProgress: ({ done, total: files }) =>
-      onProgress({ phase: "download", done, total: files }),
+    onProgress: ({ done, total: files }) => onProgress({ phase: "download", done, total: files }),
     onPair: (pair) => {
-      chain = chain
-        .then(() => renderPair(pair))
-        .catch((error: unknown) => {
-          failed.push({ timestamp: pair.timestamp, error: message(error) });
-        });
+      queue.push(pair);
+      dispatch();
     },
     onPairError: ({ timestamp, error }) => failed.push({ timestamp, error }),
   });
-  await chain;
+  // Finishing encodes dispatch more plays, so drain until nothing new starts.
+  while (running.length > 0) await Promise.all(running.splice(0));
 
   clips.sort((a, b) => a.index - b.index);
-
-  let merged: RenderResult["merged"] = null;
-  if (concat && clips.length > 0) {
-    onProgress({ phase: "concat", done: 0, total: 1 });
-    const path = `${outDir}/completo.mp4`;
-    await deps.concatClips(
-      clips.map((clip) => clip.path),
-      path,
-      rawDir,
-    );
-    merged = { path, duration: await deps.probeDuration(path) };
-    onProgress({ phase: "concat", done: 1, total: 1 });
-  }
-
-  return { clips, merged, failed };
+  return { clips, failed, crashed: crash !== null };
 }

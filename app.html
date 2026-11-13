@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ReplayBR Extended</title>
-    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/src/ui/style.css" />
   </head>
   <body>
     <header>
@@ -14,14 +14,10 @@
     <main>
       <section id="selection">
         <div class="row">
-          <label>
+          <div class="field-label">
             Quadra
-            <select id="field"></select>
-          </label>
-          <label id="slug-label" hidden>
-            Slug
-            <input id="slug" type="text" placeholder="ex: global-society" />
-          </label>
+            <div id="field"></div>
+          </div>
         </div>
         <div class="row">
           <label>
@@ -51,10 +47,6 @@
             <input id="swap" type="checkbox" />
             Inverter câmeras
           </label>
-          <label>
-            <input id="concat" type="checkbox" />
-            Juntar num vídeo só
-          </label>
         </div>
 
         <button id="generate" type="button">Gerar</button>
@@ -64,12 +56,11 @@
         <h2>Resultado</h2>
         <p id="progress" class="progress" aria-live="polite"></p>
         <div id="actions" class="actions" hidden></div>
-        <p id="expiration" class="notice" hidden></p>
         <ul id="failures" class="failures" hidden></ul>
         <div id="clips"></div>
       </section>
     </main>
 
-    <script src="/app.js" type="module"></script>
+    <script src="/src/ui/app.ts" type="module"></script>
   </body>
 </html>

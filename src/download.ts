@@ -1,11 +1,14 @@
-import { stat, mkdir } from "node:fs/promises";
-import { dirname } from "node:path";
-import type { Replay } from "./api.ts";
+import {
+  CLOUDFLARE_MESSAGE,
+  CloudflareBlockedError,
+  isCloudflareChallenge,
+  type Replay,
+} from "./api.ts";
 
 /**
- * Ceiling per download attempt of a file. Bun's `fetch` has no default
- * timeout: a CDN that sends headers and then hangs the body would keep
- * `Bun.write(destination, res)` stuck forever, without `withRetry` noticing
+ * Ceiling per download attempt of a file. `fetch` has no default timeout:
+ * a CDN that sends headers and then hangs the body would keep
+ * the body read stuck forever, without `withRetry` noticing
  * it — it only reacts to rejections, not hangs. Generous enough for a ~7 MB
  * file on a bad connection (at ~300 kbps that takes a bit over 3 min);
  * beyond that it's more likely stuck than just slow.
@@ -18,12 +21,9 @@ export interface DownloadJob {
   replay: Replay;
   camera: 1 | 2;
   url: string;
-  path: string;
 }
 
 export interface DownloadResult {
-  /** `true` when the file already existed and the download was reused. */
-  skipped: boolean;
   bytes: number;
 }
 
@@ -33,12 +33,12 @@ export interface DownloadProgress extends DownloadResult {
   job: DownloadJob;
 }
 
-/** A replay with its local files already downloaded. */
+/** A replay with its cameras already downloaded, in memory. */
 export interface ReplayPair {
   index: number;
   timestamp: string;
   /** One or two cameras, in order. */
-  cameras: string[];
+  cameras: Uint8Array[];
 }
 
 export interface DownloadFailure {
@@ -88,30 +88,17 @@ async function withConcurrency<T, R>(
   return results;
 }
 
-async function fileSize(path: string): Promise<number> {
-  try {
-    return (await stat(path)).size;
-  } catch {
-    return -1;
-  }
-}
-
-async function downloadFile(
-  url: string,
-  destination: string,
-): Promise<DownloadResult> {
-  // Cheap resume: if the file already exists and isn't empty, skip re-downloading it.
-  const existing = await fileSize(destination);
-  if (existing > 0) return { skipped: true, bytes: existing };
-
-  const res = await fetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
+async function downloadFile(url: string): Promise<Uint8Array> {
+  const res = await fetch(url, {
+    signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+    // The browser's ReplayBR session, Cloudflare clearance included.
+    credentials: "include",
+  });
+  if (isCloudflareChallenge(res)) throw new CloudflareBlockedError(CLOUDFLARE_MESSAGE);
   if (!res.ok) {
     throw new Error(`Download falhou (${res.status}) para ${url}`);
   }
-
-  await mkdir(dirname(destination), { recursive: true });
-  const bytes = await Bun.write(destination, res);
-  return { skipped: false, bytes };
+  return new Uint8Array(await res.arrayBuffer());
 }
 
 async function withRetry<T>(
@@ -123,30 +110,21 @@ async function withRetry<T>(
     try {
       return await operation();
     } catch (error) {
+      // Cloudflare won't let the next attempt through either.
+      if (error instanceof CloudflareBlockedError) throw error;
       last = error;
     }
   }
   throw last instanceof Error ? last : new Error(String(last));
 }
 
-function pairFor(replay: Replay, index: number, rawDir: string): ReplayPair {
-  const prefix = prefixFor(index);
-  const cameras = [`${rawDir}/${prefix}_camera1.mp4`];
-  if (replay.camera2_url) cameras.push(`${rawDir}/${prefix}_camera2.mp4`);
-
-  return { index, timestamp: replay.timestamp, cameras };
-}
-
-const prefixFor = (index: number): string => String(index + 1).padStart(2, "0");
-
 /**
- * Downloads camera1 and camera2 for each replay into `rawDir`, notifying via
+ * Downloads camera1 and camera2 for each replay into memory, notifying via
  * `onPair` as soon as each play becomes complete — which lets a play be
  * rendered while the next ones are still downloading.
  */
 export async function downloadReplayPairs(
   replays: Replay[],
-  rawDir: string,
   {
     concurrency = 4,
     retries = 2,
@@ -156,18 +134,11 @@ export async function downloadReplayPairs(
   }: DownloadOptions = {},
 ): Promise<DownloadOutcome> {
   const jobs: DownloadJob[] = replays.flatMap((replay, index) => {
-    const prefix = prefixFor(index);
     const urls: Array<[1 | 2, string]> = [[1, replay.camera1_url]];
     // The second camera is optional and varies per play, not just per field.
     if (replay.camera2_url) urls.push([2, replay.camera2_url]);
 
-    return urls.map(([camera, url]) => ({
-      index,
-      replay,
-      camera,
-      url,
-      path: `${rawDir}/${prefix}_camera${camera}.mp4`,
-    }));
+    return urls.map(([camera, url]) => ({ index, replay, camera, url }));
   });
 
   // How many files are still missing for each play to become complete.
@@ -177,18 +148,20 @@ export async function downloadReplayPairs(
   }
 
   const pairs: ReplayPair[] = [];
+  // Each play's cameras, by camera number, until the play is complete.
+  const received = new Map<number, Uint8Array[]>();
   const failed: DownloadFailure[] = [];
   const broken = new Set<number>();
   let done = 0;
 
   await withConcurrency(jobs, concurrency, async (job) => {
     try {
-      const result = await withRetry(
-        () => downloadFile(job.url, job.path),
-        retries,
-      );
+      const bytes = await withRetry(() => downloadFile(job.url), retries);
+      const cameras = received.get(job.index) ?? [];
+      cameras[job.camera - 1] = bytes;
+      received.set(job.index, cameras);
       done++;
-      onProgress?.({ done, total: jobs.length, job, ...result });
+      onProgress?.({ done, total: jobs.length, job, bytes: bytes.byteLength });
     } catch (error) {
       done++;
       // A play with two cameras can fail twice; we only report it once.
@@ -208,7 +181,12 @@ export async function downloadReplayPairs(
     remaining.set(job.index, left);
 
     if (left === 0 && !broken.has(job.index)) {
-      const pair = pairFor(job.replay, job.index, rawDir);
+      const pair: ReplayPair = {
+        index: job.index,
+        timestamp: job.replay.timestamp,
+        cameras: received.get(job.index) ?? [],
+      };
+      received.delete(job.index);
       pairs.push(pair);
       onPair?.(pair);
     }
