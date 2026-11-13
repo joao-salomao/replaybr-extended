@@ -1,8 +1,8 @@
 /**
  * Minimal MP4 (ISO/IEC 14496-12) box-tree reader.
  *
- * Replaces `ffprobe` for the only two things this app needs from a clip:
- * its coded width/height and its duration. An MP4 is a tree of boxes — a
+ * Replaces `ffprobe` for the one thing this app needs from a clip:
+ * its coded width/height. An MP4 is a tree of boxes — a
  * 4-byte big-endian size, a 4-byte ASCII type, then a payload — so reading
  * a handful of fixed offsets inside `moov` is enough; nothing here decodes
  * a single video frame.
@@ -133,32 +133,6 @@ async function findMoov(file: Mp4File): Promise<BoxHeader> {
 }
 
 /**
- * `mvhd` (ISO 14496-12 §8.2.2). After version(1)+flags(3), version 0 packs
- * creation/modification/timescale/duration as 32-bit fields; version 1
- * widens creation, modification and duration to 64 bits.
- */
-async function readMvhdDuration(
-  file: Mp4File,
-  moov: BoxHeader,
-): Promise<number> {
-  const mvhd = await findBox(file, moov.payloadStart, moov.end, "mvhd");
-  if (!mvhd) throw new Mp4ParseError('no "mvhd" box found');
-
-  const version = (await readBytes(file, mvhd.payloadStart, 1)).getUint8(0);
-  const base = mvhd.payloadStart + 4 + (version === 1 ? 16 : 8);
-
-  const timescale = (await readBytes(file, base, 4)).getUint32(0);
-  if (timescale === 0) throw new Mp4ParseError("mvhd timescale is zero");
-
-  const duration =
-    version === 1
-      ? Number((await readBytes(file, base + 4, 8)).getBigUint64(0))
-      : (await readBytes(file, base + 4, 4)).getUint32(0);
-
-  return duration / timescale;
-}
-
-/**
  * Finds the video track's `mdia` box by checking each `trak`'s
  * `mdia/hdlr` handler type — a file with an audio track first would
  * otherwise hand back nonsense dimensions from the wrong track.
@@ -245,17 +219,6 @@ export async function probeDimensions(file: Blob): Promise<Dimensions> {
     }
     throw new Error(
       "Não foi possível ler as dimensões do vídeo: arquivo MP4 inválido ou corrompido",
-    );
-  }
-}
-
-export async function probeDuration(file: Blob): Promise<number> {
-  try {
-    const moov = await findMoov(file);
-    return await readMvhdDuration(file, moov);
-  } catch {
-    throw new Error(
-      "Não foi possível ler a duração do vídeo: arquivo MP4 inválido ou corrompido",
     );
   }
 }

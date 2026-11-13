@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { probeDimensions, probeDuration } from "./mp4.ts";
+import { probeDimensions } from "./mp4.ts";
 
 // ---------------------------------------------------------------------------
 // Byte-building helpers. These let a test assemble a real MP4 box tree —
@@ -69,17 +69,6 @@ function mvhdV0(timescale: number, duration: number): Uint8Array {
   );
 }
 
-function mvhdV1(timescale: number, duration: number | bigint): Uint8Array {
-  return box(
-    "mvhd",
-    versionFlags(1),
-    u64(0), // creation_time
-    u64(0), // modification_time
-    u32(timescale),
-    u64(duration),
-  );
-}
-
 function hdlr(handlerType: string): Uint8Array {
   return box(
     "hdlr",
@@ -139,8 +128,8 @@ function writeMp4(...parts: Uint8Array[]): Blob {
 
 // ---------------------------------------------------------------------------
 
-describe("probeDimensions / probeDuration", () => {
-  test("reads dimensions and duration from a normal file", async () => {
+describe("probeDimensions", () => {
+  test("reads dimensions from a normal file", async () => {
     const file = writeMp4(
       ftyp(),
       moov(mvhdV0(1000, 30135), videoTrak(704, 560)),
@@ -148,7 +137,6 @@ describe("probeDimensions / probeDuration", () => {
     );
 
     await expect(probeDimensions(file)).resolves.toEqual({ width: 704, height: 560 });
-    await expect(probeDuration(file)).resolves.toBeCloseTo(30.135, 6);
   });
 
   test("finds moov after a large mdat, as our own rendered clips have it", async () => {
@@ -159,19 +147,6 @@ describe("probeDimensions / probeDuration", () => {
     );
 
     await expect(probeDimensions(file)).resolves.toEqual({ width: 1408, height: 560 });
-    await expect(probeDuration(file)).resolves.toBeCloseTo(30.134, 6);
-  });
-
-  test("reads a version-1 mvhd with a 64-bit duration", async () => {
-    // A duration that doesn't fit in 32 bits, to prove the 64-bit path is
-    // actually exercised rather than happening to also work as 32-bit.
-    const bigDuration = 5_000_000_000n;
-    const file = writeMp4(
-      ftyp(),
-      moov(mvhdV1(1000, bigDuration), videoTrak(704, 560)),
-    );
-
-    await expect(probeDuration(file)).resolves.toBeCloseTo(5_000_000, 6);
   });
 
   test("handles a box using the 64-bit extended size form", async () => {
@@ -182,7 +157,6 @@ describe("probeDimensions / probeDuration", () => {
     );
 
     await expect(probeDimensions(file)).resolves.toEqual({ width: 704, height: 560 });
-    await expect(probeDuration(file)).resolves.toBeCloseTo(30.135, 6);
   });
 
   test("picks the video track even when it isn't the first one", async () => {
@@ -192,12 +166,6 @@ describe("probeDimensions / probeDuration", () => {
     );
 
     await expect(probeDimensions(file)).resolves.toEqual({ width: 1408, height: 560 });
-  });
-
-  test("duration still reads from mvhd even when there's no video track", async () => {
-    const file = writeMp4(ftyp(), moov(mvhdV0(1000, 30135), audioTrak()));
-
-    await expect(probeDuration(file)).resolves.toBeCloseTo(30.135, 6);
   });
 
   test("rejects with a clear Portuguese error when there's no video track", async () => {
@@ -210,7 +178,6 @@ describe("probeDimensions / probeDuration", () => {
     const file = writeMp4(ftyp(), mdat(32));
 
     await expect(probeDimensions(file)).rejects.toThrow(/dimensões/i);
-    await expect(probeDuration(file)).rejects.toThrow(/duração/i);
   });
 
   test("rejects with a clear error instead of crashing on a truncated file", async () => {
@@ -223,14 +190,12 @@ describe("probeDimensions / probeDuration", () => {
     const file = writeMp4(full.slice(0, full.length - 20));
 
     await expect(probeDimensions(file)).rejects.toThrow(/dimensões/i);
-    await expect(probeDuration(file)).rejects.toThrow(/duração/i);
   });
 
   test("rejects with a clear error for a file that isn't MP4 at all", async () => {
     const file = writeMp4(ascii("this is definitely not an mp4 file"));
 
     await expect(probeDimensions(file)).rejects.toThrow(/dimensões/i);
-    await expect(probeDuration(file)).rejects.toThrow(/duração/i);
   });
 
 
