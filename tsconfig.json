@@ -1,12 +1,12 @@
 {
   "compilerOptions": {
     // Ambiente
-    "lib": ["ESNext"],
+    "lib": ["ESNext", "DOM"],
     "target": "ESNext",
     "module": "Preserve",
     "moduleResolution": "bundler",
     "moduleDetection": "force",
-    "types": ["bun"],
+    "types": ["bun", "chrome"],
 
     // Bun executa o TS direto: nada é emitido, imports mantêm a extensão .ts
     "allowImportingTsExtensions": true,
@@ -20,5 +20,5 @@
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["index.ts", "server.ts", "src/**/*.ts"]
+  "include": ["index.ts", "server.ts", "*.config.ts", "src/**/*.ts"]
 }
