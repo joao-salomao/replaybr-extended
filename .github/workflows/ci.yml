@@ -25,29 +25,7 @@ jobs:
 
       - run: bun test
 
-  docker:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
+      - run: bunx playwright install --with-deps chromium
 
-      - run: docker build -t replaybr-extended:ci .
-
-      - name: Boot the image and check it serves
-        run: |
-          docker run -d --name check -p 3000:3000 replaybr-extended:ci
-
-          for attempt in $(seq 30); do
-            if curl -fs localhost:3000/api/fields >/dev/null \
-               && curl -fs localhost:3000/ >/dev/null; then
-              echo "API and page answered after ${attempt}s"
-              docker logs check
-              docker rm -f check
-              exit 0
-            fi
-            sleep 1
-          done
-
-          echo "::error::the server did not answer within 30s"
-          docker logs check
-          docker rm -f check
-          exit 1
+      # Builds the extension and drives it in Chromium against fixtures.
+      - run: bun run e2e

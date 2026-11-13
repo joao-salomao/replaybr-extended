@@ -1,8 +1,4 @@
 node_modules/
-downloads/
-output/
-*.mp4
 .DS_Store
 .idea/
 dist/
-work/
