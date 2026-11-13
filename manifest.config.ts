@@ -1,9 +1,11 @@
 import { defineManifest } from "@crxjs/vite-plugin";
+import pkg from "./package.json" with { type: "json" };
 
 export default defineManifest({
   manifest_version: 3,
   name: "replaybr-extended",
-  version: "1.0.0",
+  // One version for the package, the manifest and the release tag.
+  version: pkg.version,
   description: "Baixa replays do ReplayBR e junta as duas câmeras lado a lado.",
   // The ReplayBR symbol, cropped from the site's logo (public/logo-comfundo.png).
   icons: {

@@ -1,0 +1,23 @@
+name: Verify
+description: Sets up Bun, installs dependencies, typechecks and runs the unit tests.
+
+inputs:
+  bun-version:
+    description: Bun version to install. Pass the BUN_VERSION repository variable.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: ${{ inputs.bun-version }}
+
+    - run: bun install --frozen-lockfile
+      shell: bash
+
+    - run: bun run typecheck
+      shell: bash
+
+    - run: bun test
+      shell: bash

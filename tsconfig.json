@@ -6,6 +6,7 @@
     "module": "Preserve",
     "moduleResolution": "bundler",
     "moduleDetection": "force",
+    "resolveJsonModule": true,
     "types": ["bun", "chrome"],
 
     // O Vite empacota e o Bun roda os testes: o tsc só confere tipos
@@ -20,5 +21,5 @@
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["*.config.ts", "src/**/*.ts", "e2e/**/*.ts"]
+  "include": ["*.config.ts", "src/**/*.ts"]
 }
