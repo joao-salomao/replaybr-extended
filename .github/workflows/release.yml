@@ -44,11 +44,11 @@ jobs:
           fail_on_unmatched_files: true
           generate_release_notes: true
           body: |
-            ## Instalar
+            ## Install
 
-            1. Baixe o `replaybr-extended-${{ steps.version.outputs.version }}.zip` abaixo e descompacte.
-            2. No Chrome, abra `chrome://extensions` e ligue o **Modo do desenvolvedor**.
-            3. Clique em **Carregar sem compactação** e escolha a pasta descompactada.
-            4. Abra `https://www.replaybr.com.br` uma vez, para o Cloudflare liberar, e clique no ícone da extensão.
+            1. Download `replaybr-extended-${{ steps.version.outputs.version }}.zip` below and unzip it.
+            2. In Chrome, open `chrome://extensions` and turn on **Developer mode**.
+            3. Click **Load unpacked** and pick the unzipped folder.
+            4. Open `https://www.replaybr.com.br` once, so Cloudflare lets you through, then click the extension's icon.
 
-            Para atualizar, descompacte a versão nova por cima da pasta e clique em recarregar (↻) no card da extensão.
+            To update, unzip the new version over the same folder and click reload (↻) on the extension's card.
