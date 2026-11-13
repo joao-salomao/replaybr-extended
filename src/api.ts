@@ -30,38 +30,17 @@ export class ReplayBrUnavailableError extends Error {}
 
 /**
  * Cloudflare answered with its bot check ("Just a moment...") instead of the
- * API. Retrying does not help: the server needs a fresh `cf_clearance`.
+ * API. Retrying does not help: the user has to pass the check on the site.
  */
 export class CloudflareBlockedError extends ReplayBrUnavailableError {}
 
-/**
- * A `cf_clearance` cookie taken from a browser that passed the Cloudflare
- * check. Cloudflare ties it to that browser's User-Agent, so both go together.
- */
-export interface CloudflareClearance {
-  cfClearance: string;
-  userAgent: string;
+/** Cloudflare answered with its "Just a moment..." check instead of the content. */
+export function isCloudflareChallenge(res: Response): boolean {
+  return res.status === 403 && res.headers.get("cf-mitigated") === "challenge";
 }
 
-// Set once at boot. Process-wide, because both the listing and the video
-// downloads hit the same Cloudflare-protected host.
-let clearance: CloudflareClearance | undefined;
-
-export function setCloudflareClearance(value: CloudflareClearance | undefined): void {
-  clearance = value;
-}
-
-/**
- * Headers that get past the Cloudflare check. Empty for any host other than
- * the ReplayBR one, so the cookie never leaks elsewhere.
- */
-export function replayBrHeaders(url: string): Record<string, string> {
-  if (!clearance || new URL(url).origin !== API_BASE) return {};
-  return {
-    Cookie: `cf_clearance=${clearance.cfClearance}`,
-    "User-Agent": clearance.userAgent,
-  };
-}
+export const CLOUDFLARE_MESSAGE =
+  "O Cloudflare bloqueou o acesso. Abra www.replaybr.com.br nesta janela para liberar e tente de novo.";
 
 /** Fetches every replay for a field on a given date (YYYY-MM-DD). */
 export async function fetchReplaysForDate(
@@ -76,18 +55,15 @@ export async function fetchReplaysForDate(
   try {
     res = await fetch(url, {
       signal: AbortSignal.timeout(API_TIMEOUT_MS),
-      headers: replayBrHeaders(url),
+      // The browser's ReplayBR session, Cloudflare clearance included.
+      credentials: "include",
     });
   } catch (error) {
     throw new ReplayBrUnavailableError(
       `Falha ao falar com a API do ReplayBR: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
-  if (res.status === 403 && res.headers.get("cf-mitigated") === "challenge") {
-    throw new CloudflareBlockedError(
-      `API do ReplayBR bloqueada pela verificação do Cloudflare (403) para ${url}`,
-    );
-  }
+  if (isCloudflareChallenge(res)) throw new CloudflareBlockedError(CLOUDFLARE_MESSAGE);
   if (!res.ok) {
     throw new ReplayBrUnavailableError(
       `API respondeu ${res.status} ${res.statusText} para ${url}`,

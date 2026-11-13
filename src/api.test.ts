@@ -5,8 +5,6 @@ import {
   groupReplaysByHour,
   normalizeHour,
   ReplayBrUnavailableError,
-  replayBrHeaders,
-  setCloudflareClearance,
   type Replay,
 } from "./api.ts";
 
@@ -112,7 +110,6 @@ function stubFetch(
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
-  setCloudflareClearance(undefined);
 });
 
 describe("fetchReplaysForDate", () => {
@@ -201,16 +198,22 @@ describe("fetchReplaysForDate", () => {
     );
   });
 
-  test("sends the cf_clearance cookie and its User-Agent when set", async () => {
+  test("sends credentials: include", async () => {
     stubFetch(() => Response.json({ replays: [] }));
-
-    setCloudflareClearance({ cfClearance: "abc123", userAgent: "Mozilla/5.0 Test" });
 
     await fetchReplaysForDate("four-play-3", "2026-08-13");
 
-    const headers = new Headers(calls[0]?.init?.headers);
-    expect(headers.get("cookie")).toBe("cf_clearance=abc123");
-    expect(headers.get("user-agent")).toBe("Mozilla/5.0 Test");
+    expect(calls[0]?.init?.credentials).toBe("include");
+  });
+
+  test("the Cloudflare message tells the user to open the site", async () => {
+    stubFetch(
+      () => new Response("", { status: 403, headers: { "cf-mitigated": "challenge" } }),
+    );
+
+    await expect(fetchReplaysForDate("four-play-3", "2026-08-13")).rejects.toThrow(
+      "www.replaybr.com.br",
+    );
   });
 
   test("passes an abort signal for the timeout", async () => {
@@ -222,14 +225,3 @@ describe("fetchReplaysForDate", () => {
   });
 });
 
-describe("replayBrHeaders", () => {
-  test("returns no headers when no clearance was set", () => {
-    expect(replayBrHeaders("https://replays.replaybr.com.br/video/x.mp4")).toEqual({});
-  });
-
-  test("never sends the cookie to another host", () => {
-    setCloudflareClearance({ cfClearance: "abc123", userAgent: "Mozilla/5.0 Test" });
-
-    expect(replayBrHeaders("https://example/x.mp4")).toEqual({});
-  });
-});

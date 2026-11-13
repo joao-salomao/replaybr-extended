@@ -1,5 +1,5 @@
 import {serveStatic} from 'hono/bun'
-import {fetchReplaysForDate, setCloudflareClearance} from './src/api.ts'
+import {fetchReplaysForDate} from './src/api.ts'
 import {assertFfmpegAvailable} from './src/ffmpeg.ts'
 import {JobStore} from './src/web/jobs.ts'
 import {createApp} from './src/web/routes.ts'
@@ -27,19 +27,6 @@ for (const entry of await readdir(WORK_DIR)) {
             `⚠ Não foi possível remover "${entry}" de ${WORK_DIR}: ${error instanceof Error ? error.message : String(error)}`,
         )
     }
-}
-
-// The ReplayBR API sits behind a Cloudflare bot check. Paste the
-// cf_clearance cookie from a browser that passed it, plus that browser's
-// User-Agent (Cloudflare ties the cookie to it). Kept in memory only.
-const cfClearance = prompt('cf_clearance (vazio para seguir sem):')?.trim()
-const userAgent = cfClearance
-    ? prompt('User-Agent do mesmo navegador (rode navigator.userAgent no console):')?.trim()
-    : undefined
-if (cfClearance && userAgent) {
-    setCloudflareClearance({cfClearance, userAgent})
-} else {
-    console.warn('⚠ Sem cf_clearance: o Cloudflare deve bloquear as buscas e os downloads.')
 }
 
 const jobs = new JobStore({root: WORK_DIR})
