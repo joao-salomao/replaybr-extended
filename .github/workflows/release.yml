@@ -14,15 +14,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.4
-
-      - run: bun install --frozen-lockfile
-
-      - run: bun run typecheck
-
-      - run: bun test
+      # Shared by CI and Release: Bun, install, typecheck, unit tests.
+      - uses: ./.github/actions/verify
 
       - name: Read the version
         id: version
