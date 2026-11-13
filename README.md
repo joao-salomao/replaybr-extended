@@ -2,23 +2,28 @@
 
 Extensão do Chrome que baixa os replays do [ReplayBR](https://www.replaybr.com.br/replay?fieldName=four-play-3) de uma data e hora e gera **um vídeo por lance**, com as **duas câmeras lado a lado** tocando ao mesmo tempo.
 
-Tudo roda no seu navegador: a busca, o download, a montagem dos vídeos (ffmpeg.wasm) e o `.zip`. O ReplayBR fica atrás da verificação do Cloudflare, e como as chamadas saem do seu Chrome, que já passou por ela, nada precisa ser copiado nem colado.
+Tudo roda no seu navegador: a busca, o download, a montagem dos vídeos (ffmpeg.wasm) e o `.zip`. O ReplayBR fica atrás da verificação do Cloudflare, e as chamadas saem do seu Chrome, que já passou por ela.
 
 ![A interface: seleção de quadra, data e hora, a lista de lances com as câmeras originais abertas para prévia, e o botão de gerar](docs/ui.png)
 
 ## Instalar
 
-Precisa do [Bun](https://bun.sh).
+1. Baixe o `replaybr-extended-<versão>.zip` do [release mais recente](https://github.com/joao-salomao/replaybr-extended/releases/latest) e descompacte.
+2. No Chrome, abra `chrome://extensions` e ligue o **Modo do desenvolvedor**.
+3. Clique em **Carregar sem compactação** e escolha a pasta descompactada.
+4. Abra `https://www.replaybr.com.br` uma vez nesse Chrome, para o Cloudflare liberar.
+5. Clique no ícone da extensão: o app abre numa aba nova.
+
+Para atualizar, descompacte a versão nova por cima da mesma pasta e clique em recarregar (↻) no card da extensão.
+
+### A partir do código
+
+Precisa do [Bun](https://bun.sh). Gere a extensão e carregue a pasta `dist/` no passo 3 acima:
 
 ```bash
 bun install
 bun run build
 ```
-
-1. No Chrome, abra `chrome://extensions` e ligue o **Modo do desenvolvedor**.
-2. Clique em **Carregar sem compactação** e escolha a pasta `dist/`.
-3. Abra `https://www.replaybr.com.br` uma vez nesse Chrome, para o Cloudflare liberar.
-4. Clique no ícone da extensão: o app abre numa aba nova.
 
 Depois de um `bun run build` novo, clique em recarregar (↻) no card da extensão.
 
@@ -49,6 +54,13 @@ bun run e2e         # build + a extensão no Chromium do Playwright
 ```
 
 O `bun run e2e` precisa do Chromium do Playwright uma vez: `bunx playwright install chromium`. Ele carrega o `dist/` e responde às chamadas aos dois domínios do ReplayBR com as fixtures de `e2e/`, então não toca o site real.
+
+### Publicar uma versão
+
+1. Suba o `version` do `package.json` (o manifesto lê a mesma versão) e faça o merge no `main`.
+2. Em **Actions > Release > Run workflow**, rode no `main`.
+
+O workflow roda o typecheck e os testes, gera o `dist/`, publica o release `v<versão>` com o `.zip` anexado e para se essa tag já existir.
 
 ```
 manifest.config.ts   manifesto MV3 (CRXJS)

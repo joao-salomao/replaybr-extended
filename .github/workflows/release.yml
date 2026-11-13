@@ -1,0 +1,59 @@
+name: Release
+
+# Run by hand from the Actions tab: builds the extension at the chosen ref and
+# publishes it as a GitHub release, tagged with package.json's version.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.1
+
+      - run: bun install --frozen-lockfile
+
+      - run: bun run typecheck
+
+      - run: bun test
+
+      - name: Read the version
+        id: version
+        run: |
+          version=$(jq -r .version package.json)
+          # A published release is never overwritten: bump package.json instead.
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null; then
+            echo "::error::Tag v$version already exists. Bump the version in package.json."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - run: bun run build
+
+      - name: Package dist/
+        run: cd dist && zip -r "../replaybr-extended-${{ steps.version.outputs.version }}.zip" .
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: replaybr-extended ${{ steps.version.outputs.version }}
+          files: replaybr-extended-${{ steps.version.outputs.version }}.zip
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          body: |
+            ## Instalar
+
+            1. Baixe o `replaybr-extended-${{ steps.version.outputs.version }}.zip` abaixo e descompacte.
+            2. No Chrome, abra `chrome://extensions` e ligue o **Modo do desenvolvedor**.
+            3. Clique em **Carregar sem compactação** e escolha a pasta descompactada.
+            4. Abra `https://www.replaybr.com.br` uma vez, para o Cloudflare liberar, e clique no ícone da extensão.
+
+            Para atualizar, descompacte a versão nova por cima da pasta e clique em recarregar (↻) no card da extensão.
