@@ -17,6 +17,8 @@ jobs:
 
       # Shared by CI and Release: Bun, install, typecheck, unit tests.
       - uses: ./.github/actions/verify
+        with:
+          bun-version: ${{ vars.BUN_VERSION }}
 
       - run: bunx playwright install --with-deps chromium
 

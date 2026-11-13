@@ -77,3 +77,5 @@ e2e/                 teste ponta a ponta e fixtures
 2. Em **Actions > Release > Run workflow**, rode no `main`.
 
 O workflow roda o typecheck e os testes, gera o `dist/`, publica o release `v<versão>` com o `.zip` anexado e para se essa tag já existir.
+
+O CI e o release instalam o Bun na versão da variável de repositório `BUN_VERSION` (Settings > Secrets and variables > Actions > Variables). Mantenha igual à versão local (`bun --version`).

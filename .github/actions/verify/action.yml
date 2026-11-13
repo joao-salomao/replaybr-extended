@@ -1,12 +1,24 @@
 name: Verify
 description: Sets up Bun, installs dependencies, typechecks and runs the unit tests.
 
+inputs:
+  bun-version:
+    description: Bun version to install. Pass the BUN_VERSION repository variable.
+    required: true
+
 runs:
   using: composite
   steps:
+    # An unset variable would make setup-bun quietly pick the latest Bun.
+    - if: inputs.bun-version == ''
+      run: |
+        echo "::error::Set the BUN_VERSION repository variable (Settings > Secrets and variables > Actions > Variables)."
+        exit 1
+      shell: bash
+
     - uses: oven-sh/setup-bun@v2
       with:
-        bun-version: 1.4.4
+        bun-version: ${{ inputs.bun-version }}
 
     - run: bun install --frozen-lockfile
       shell: bash
